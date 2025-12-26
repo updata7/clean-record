@@ -6,10 +6,19 @@ import AVFoundation
 class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, SCStreamDelegate {
     static let shared = RecorderManager()
     
+    enum RecordingState {
+        case idle
+        case recording
+        case paused
+    }
+    
     private var stream: SCStream?
     private var videoWriter: VideoWriter?
     private var audioSession: AVCaptureSession?
-    private var isRecording = false
+    private var recordingState: RecordingState = .idle
+    
+    var isRecording: Bool { recordingState != .idle }
+    var isPaused: Bool { recordingState == .paused }
     
     // Dedicated queue for video samples to prevent blocking Main thread
     private let videoSampleQueue = DispatchQueue(label: "com.cleanrecord.video.samples", qos: .userInitiated)
@@ -111,7 +120,7 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
                     print("RecorderManager: Audio session started.")
                 }
                 
-                self.isRecording = true
+                self.recordingState = .recording
                 print("Recording started at \(fileURL.path)")
                 completion(.success(()))
                 
@@ -154,10 +163,23 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         // Forward to VideoWriter
-        // Note: VideoWriter needs to handle this.
-        if isRecording, let writer = videoWriter {
+        if recordingState == .recording, let writer = videoWriter {
              writer.appendAudio(sampleBuffer)
         }
+    }
+    
+    func pauseRecording() {
+        guard recordingState == .recording else { return }
+        videoWriter?.pause()
+        recordingState = .paused
+        print("RecorderManager: Recording paused.")
+    }
+    
+    func resumeRecording() {
+        guard recordingState == .paused else { return }
+        videoWriter?.resume()
+        recordingState = .recording
+        print("RecorderManager: Recording resumed.")
     }
     
     func stopRecording() async -> URL? {
@@ -184,7 +206,7 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
             self.stream = nil
             self.videoWriter = nil
             self.audioSession = nil
-            self.isRecording = false
+            self.recordingState = .idle
             
             return url
         } catch {

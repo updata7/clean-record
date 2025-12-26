@@ -55,6 +55,15 @@ struct CameraOverlayView: View {
                         }
                         .buttonStyle(.plain)
                         
+                        Button(action: { settings.beautyEnabled.toggle() }) {
+                            Image(systemName: settings.beautyEnabled ? "face.smiling.fill" : "face.smiling")
+                                .padding(6)
+                                .background(settings.beautyEnabled ? Color.pink : Color.black.opacity(0.6))
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Beauty Mode")
+
                         Spacer()
                         
                         Button(action: { settings.cameraEnabled = false }) {
@@ -117,38 +126,71 @@ struct CameraOverlayView: View {
 }
 
 struct CameraPreview: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.wantsLayer = true
-        
-        // Setup Capture Session
-        let session = AVCaptureSession()
-        session.sessionPreset = .low
-        
-        guard let device = AVCaptureDevice.default(for: .video),
-              let input = try? AVCaptureDeviceInput(device: device) else {
-            return view
-        }
-        
-        if session.canAddInput(input) {
-            session.addInput(input)
-        }
-        
-        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
-        previewLayer.videoGravity = .resizeAspectFill
-        view.layer = previewLayer
-        
-        // Start session on background thread
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.startRunning()
-        }
-        
+    func makeNSView(context: Context) -> FilteredCameraView {
+        let view = FilteredCameraView()
         return view
     }
     
-    func updateNSView(_ nsView: NSView, context: Context) {
-        if let layer = nsView.layer as? AVCaptureVideoPreviewLayer {
-            layer.frame = nsView.bounds
+    func updateNSView(_ nsView: FilteredCameraView, context: Context) {}
+}
+
+class FilteredCameraView: NSView, AVCaptureVideoDataOutputSampleBufferDelegate {
+    private let session = AVCaptureSession()
+    private let context = CIContext(options: [.workingColorSpace: NSNull()])
+    private var beautyFilter: CIFilter?
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.cgColor
+        setupSession()
+    }
+    
+    required init?(coder: NSCoder) { fatalError() }
+    
+    private func setupSession() {
+        session.sessionPreset = .medium
+        
+        guard let device = AVCaptureDevice.default(for: .video),
+              let input = try? AVCaptureDeviceInput(device: device) else { return }
+        
+        if session.canAddInput(input) { session.addInput(input) }
+        
+        let output = AVCaptureVideoDataOutput()
+        output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "com.cleanrecord.camera.filter"))
+        if session.canAddOutput(output) { session.addOutput(output) }
+        
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            self?.session.startRunning()
         }
+    }
+    
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        var ciImage = CIImage(cvPixelBuffer: imageBuffer)
+        
+        // Match orientation if needed (not usually needed for webcam on Mac)
+        
+        if SettingsManager.shared.beautyEnabled {
+            // Basic skin smoothing using Bilateral Filter
+            let filter = CIFilter(name: "CIBilateralFilter")
+            filter?.setValue(ciImage, forKey: kCIInputImageKey)
+            filter?.setValue(3.0, forKey: "inputRadius") // Small radius for subtlety
+            filter?.setValue(0.02, forKey: "inputSoftness")
+            
+            if let outputImage = filter?.outputImage {
+                ciImage = outputImage
+            }
+        }
+        
+        if let cgImage = context.createCGImage(ciImage, from: ciImage.extent) {
+            DispatchQueue.main.async { [weak self] in
+                self?.layer?.contents = cgImage
+            }
+        }
+    }
+    
+    deinit {
+        session.stopRunning()
     }
 }

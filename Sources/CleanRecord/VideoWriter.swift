@@ -16,6 +16,11 @@ class VideoWriter: NSObject, SCStreamOutput {
     private var frameCounter = 0
     private var startTime: CMTime?
     
+    // Pause/Resume state
+    private var isPaused = false
+    private var totalPausedDuration: CMTime = .zero
+    private var lastPausedTime: CMTime?
+    
     init(fileURL: URL, hasAudio: Bool = false) {
         self.fileURL = fileURL
         self.hasAudio = hasAudio
@@ -90,42 +95,28 @@ class VideoWriter: NSObject, SCStreamOutput {
         print("VideoWriter: Initialized lazily with size \(adjWidth)x\(adjHeight)")
     }
     
+    func pause() {
+        guard isWriting, !isPaused else { return }
+        isPaused = true
+        print("VideoWriter: Paused.")
+    }
+    
+    func resume() {
+        guard isWriting, isPaused else { return }
+        isPaused = false
+        print("VideoWriter: Resumed.")
+    }
+    
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen else { return }
         
+        let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
         // Lazy initialize on first video frame
         if assetWriter == nil {
             print("VideoWriter: Received first frame. Attempting initialization...")
-            guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-                  let attachment = attachments.first,
-                  let contentRectDict = attachment[.contentRect],
-                  let _ = CGRect(dictionaryRepresentation: contentRectDict as! CFDictionary) else {
-                
-                // Fallback to image buffer
-                if let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                    let width = CVPixelBufferGetWidth(imageBuffer)
-                    let height = CVPixelBufferGetHeight(imageBuffer)
-                    print("VideoWriter: Init fallback using ImageBuffer: \(width)x\(height)")
-                    try? setupWriter(width: width, height: height)
-                } else {
-                     print("VideoWriter: Failed to extract dimensions from first frame. Waiting for next.")
-                }
-                return
-            }
-            
-            // Prefer Pixel Buffer
-            if let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-               let width = CVPixelBufferGetWidth(imageBuffer)
-               let height = CVPixelBufferGetHeight(imageBuffer)
-                do {
-                   try setupWriter(width: width, height: height)
-                } catch {
-                    print("VideoWriter Setup Error: \(error)")
-                    // Disable writing to prevent spam
-                    isWriting = false 
-                    return
-                }
-           }
+            // ... (setup code remains same)
+            setupOnFirstFrame(sampleBuffer)
         }
         
         guard let writer = assetWriter, let videoInput = videoInput, isWriting else { return }
@@ -138,43 +129,99 @@ class VideoWriter: NSObject, SCStreamOutput {
             return
         }
         
-        let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        
         if !sessionStarted {
             print("VideoWriter: Starting session at \(currentTime.seconds)")
             writer.startSession(atSourceTime: currentTime)
             self.startTime = currentTime
-            sessionStarted = true
+            self.sessionStarted = true
         }
         
+        // Handle Pause/Resume
+        if isPaused {
+            if lastPausedTime == nil {
+                lastPausedTime = currentTime
+            }
+            return
+        } else if let pauseStart = lastPausedTime {
+            // We just resumed
+            let pauseDuration = CMTimeSubtract(currentTime, pauseStart)
+            totalPausedDuration = CMTimeAdd(totalPausedDuration, pauseDuration)
+            lastPausedTime = nil
+            print("VideoWriter: Adjusted for pause of \(pauseDuration.seconds)s. Total pause: \(totalPausedDuration.seconds)s")
+        }
+        
+        // Adjust timestamp
+        let adjustedTime = CMTimeSubtract(currentTime, totalPausedDuration)
+        
         if videoInput.isReadyForMoreMediaData {
-            if !videoInput.append(sampleBuffer) {
-                print("VideoWriter Error: Failed to append video buffer. Status: \(writer.status.rawValue), Error: \(String(describing: writer.error))")
-            } else {
-                frameCounter += 1
-                if frameCounter <= 10 || frameCounter % 100 == 0 {
-                    print("VideoWriter: Stream activity - received \(frameCounter) frames.")
+            var timing = CMSampleTimingInfo(
+                duration: CMSampleBufferGetDuration(sampleBuffer),
+                presentationTimeStamp: adjustedTime,
+                decodeTimeStamp: .invalid
+            )
+            
+            var adjustedBuffer: CMSampleBuffer?
+            let status = CMSampleBufferCreateCopyWithNewTiming(
+                allocator: kCFAllocatorDefault,
+                sampleBuffer: sampleBuffer,
+                sampleTimingEntryCount: 1,
+                sampleTimingArray: &timing,
+                sampleBufferOut: &adjustedBuffer
+            )
+            
+            if status == noErr, let buffer = adjustedBuffer {
+                if !videoInput.append(buffer) {
+                    print("VideoWriter Error: Failed to append video buffer. Status: \(writer.status.rawValue), Error: \(String(describing: writer.error))")
+                } else {
+                    frameCounter += 1
+                    if frameCounter <= 10 || frameCounter % 100 == 0 {
+                        print("VideoWriter: Stream activity - recorded \(frameCounter) frames (adjusted PTS: \(adjustedTime.seconds)).")
+                    }
                 }
             }
-        } else {
-            // Optional: log if dropping too many
-            // print("VideoWriter: Video input not ready.")
+        }
+    }
+    
+    private func setupOnFirstFrame(_ sampleBuffer: CMSampleBuffer) {
+        guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        let width = CVPixelBufferGetWidth(imageBuffer)
+        let height = CVPixelBufferGetHeight(imageBuffer)
+        do {
+            try setupWriter(width: width, height: height)
+        } catch {
+            print("VideoWriter Setup Error: \(error)")
+            isWriting = false 
         }
     }
     
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
-        guard sessionStarted, let startTime = startTime, let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
+        guard sessionStarted, !isPaused, let startTime = startTime, let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
         
-        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-        if pts < startTime {
-            return // Skip audio before video session
-        }
+        let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if currentTime < startTime { return }
         
-        if !audioInput.append(sampleBuffer) {
-             print("VideoWriter Error: Failed to append audio buffer. Status: \(assetWriter?.status.rawValue ?? -1)")
-             if let error = assetWriter?.error {
-                 print("VideoWriter Audio Error: \(error.localizedDescription)")
-             }
+        // Adjust timestamp for pauses
+        let adjustedTime = CMTimeSubtract(currentTime, totalPausedDuration)
+        
+        var timing = CMSampleTimingInfo(
+            duration: CMSampleBufferGetDuration(sampleBuffer),
+            presentationTimeStamp: adjustedTime,
+            decodeTimeStamp: .invalid
+        )
+        
+        var adjustedBuffer: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleBufferOut: &adjustedBuffer
+        )
+        
+        if status == noErr, let buffer = adjustedBuffer {
+            if !audioInput.append(buffer) {
+                 print("VideoWriter Error: Failed to append audio buffer. Status: \(assetWriter?.status.rawValue ?? -1)")
+            }
         }
     }
     

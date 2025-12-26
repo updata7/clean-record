@@ -18,6 +18,11 @@ class StatusBarController: NSObject {
     }
 
     private func setupMenu() {
+        let aboutItem = NSMenuItem(title: "About CleanRecord", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+        menu.addItem(NSMenuItem.separator())
+        
         if let button = statusItem.button {
             // Using a system symbol for now, similar to a camera or lens
             button.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "CleanRecord")
@@ -41,6 +46,17 @@ class StatusBarController: NSObject {
         let recordScreenItem = NSMenuItem(title: "Record Screen", action: #selector(recordScreen), keyEquivalent: "r")
         recordScreenItem.target = self
         menu.addItem(recordScreenItem)
+        
+        // Pause/Resume items
+        let pauseItem = NSMenuItem(title: "Pause Recording", action: #selector(pauseRecording), keyEquivalent: "p")
+        pauseItem.target = self
+        pauseItem.isHidden = true
+        menu.addItem(pauseItem)
+        
+        let resumeItem = NSMenuItem(title: "Resume Recording", action: #selector(resumeRecording), keyEquivalent: "")
+        resumeItem.target = self
+        resumeItem.isHidden = true
+        menu.addItem(resumeItem)
         
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Select Output Folder...", action: #selector(selectOutputDirectory), keyEquivalent: "o")
@@ -106,6 +122,9 @@ class StatusBarController: NSObject {
                                                     Task { @MainActor in
                                                         item.title = "Stop Recording"
                                                         sItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
+                                                        
+                                                        // Show Pause
+                                                        sItem.menu?.item(withTitle: "Pause Recording")?.isHidden = false
                                                     }
                                                 case .failure(let error):
                                                     print("Error: \(error)")
@@ -140,6 +159,10 @@ class StatusBarController: NSObject {
                             sItem.button?.title = "REC"
                         }
                         
+                        // Hide Pause/Resume
+                        sItem.menu?.item(withTitle: "Pause Recording")?.isHidden = true
+                        sItem.menu?.item(withTitle: "Resume Recording")?.isHidden = true
+                        
                         if let url = await rManager.stopRecording() {
                             print("StatusBarController: Recording stopped successfully at \(url.path)")
                             
@@ -164,6 +187,40 @@ class StatusBarController: NSObject {
                 }
             }
         }
+    }
+    
+    @objc func pauseRecording() {
+        RecorderManager.shared.pauseRecording()
+        statusItem.menu?.item(withTitle: "Pause Recording")?.isHidden = true
+        statusItem.menu?.item(withTitle: "Resume Recording")?.isHidden = false
+        statusItem.button?.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Paused")
+    }
+    
+    @objc func resumeRecording() {
+        RecorderManager.shared.resumeRecording()
+        statusItem.menu?.item(withTitle: "Pause Recording")?.isHidden = false
+        statusItem.menu?.item(withTitle: "Resume Recording")?.isHidden = true
+        statusItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
+    }
+    
+    @objc func showAbout() {
+        let alert = NSAlert()
+        alert.messageText = "CleanRecord"
+        alert.informativeText = "Version 2.1\nA sleek screen recorder with Nano Banana energy."
+        
+        if let logoPath = Bundle.main.path(forResource: "AppIcon", ofType: "png"),
+           let image = NSImage(contentsOfFile: logoPath) {
+            alert.icon = image
+        } else {
+            // Fallback to absolute path if bundle fails (common in standalone scripts/debug builds)
+            let fallbackPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
+            if let image = NSImage(contentsOfFile: fallbackPath) {
+                alert.icon = image
+            }
+        }
+        
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
     
     @objc func selectOutputDirectory() {

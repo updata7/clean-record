@@ -13,6 +13,7 @@ class SettingsManager: ObservableObject {
     private let kCameraEnabled = "cameraEnabled"
     private let kCameraShape = "cameraShape"
     private let kCameraScale = "cameraScale"
+    private let kBeautyEnabled = "beautyEnabled"
     
     // Published properties for UI binding
     @Published var micEnabled: Bool {
@@ -35,6 +36,10 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(cameraScale, forKey: kCameraScale) }
     }
     
+    @Published var beautyEnabled: Bool {
+        didSet { defaults.set(beautyEnabled, forKey: kBeautyEnabled) }
+    }
+    
     init() {
         self.micEnabled = defaults.object(forKey: kMicEnabled) as? Bool ?? false
         self.systemAudioEnabled = defaults.object(forKey: kSystemAudioEnabled) as? Bool ?? false
@@ -45,6 +50,7 @@ class SettingsManager: ObservableObject {
         // Load persistent camera settings
         self.cameraShape = defaults.string(forKey: kCameraShape) ?? "circle"
         self.cameraScale = defaults.object(forKey: kCameraScale) as? CGFloat ?? 1.0
+        self.beautyEnabled = defaults.bool(forKey: kBeautyEnabled)
     }
     
     var outputDirectory: URL {

@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "CleanRecord",
     platforms: [
-        .macOS(.v12)
+        .macOS("12.3")
     ],
     products: [
         .executable(
