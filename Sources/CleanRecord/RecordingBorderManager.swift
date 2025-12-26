@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 class RecordingBorderManager {
     static let shared = RecordingBorderManager()
-    private var window: NSWindow?
+    public var window: NSWindow?
     
     func showBorder(for rect: CGRect) {
         if window == nil {

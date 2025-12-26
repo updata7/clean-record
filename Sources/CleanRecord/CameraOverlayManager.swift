@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 class CameraOverlayManager {
     static let shared = CameraOverlayManager()
     

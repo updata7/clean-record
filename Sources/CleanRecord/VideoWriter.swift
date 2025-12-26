@@ -14,6 +14,7 @@ class VideoWriter: NSObject, SCStreamOutput {
     private var isWriting = true
     private var sessionStarted = false
     private var frameCounter = 0
+    private var startTime: CMTime?
     
     init(fileURL: URL, hasAudio: Bool = false) {
         self.fileURL = fileURL
@@ -61,8 +62,8 @@ class VideoWriter: NSObject, SCStreamOutput {
             let audioSettings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 44100,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderBitRateKey: 64000
+                AVNumberOfChannelsKey: 2, // Stereo is safer
+                AVEncoderBitRateKey: 128000
             ]
             let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
             aInput.expectsMediaDataInRealTime = true
@@ -138,6 +139,7 @@ class VideoWriter: NSObject, SCStreamOutput {
         if !sessionStarted {
             print("VideoWriter: Starting session at \(currentTime.seconds)")
             writer.startSession(atSourceTime: currentTime)
+            self.startTime = currentTime
             sessionStarted = true
         }
         
@@ -146,7 +148,7 @@ class VideoWriter: NSObject, SCStreamOutput {
                 print("VideoWriter Error: Failed to append video buffer. Status: \(writer.status.rawValue), Error: \(String(describing: writer.error))")
             } else {
                 frameCounter += 1
-                if frameCounter % 100 == 0 {
+                if frameCounter <= 10 || frameCounter % 100 == 0 {
                     print("VideoWriter: Stream activity - received \(frameCounter) frames.")
                 }
             }
@@ -157,9 +159,18 @@ class VideoWriter: NSObject, SCStreamOutput {
     }
     
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
-        guard sessionStarted, let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
+        guard sessionStarted, let startTime = startTime, let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
+        
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        if pts < startTime {
+            return // Skip audio before video session
+        }
+        
         if !audioInput.append(sampleBuffer) {
-             print("VideoWriter Error: Failed to append audio buffer.")
+             print("VideoWriter Error: Failed to append audio buffer. Status: \(assetWriter?.status.rawValue ?? -1)")
+             if let error = assetWriter?.error {
+                 print("VideoWriter Audio Error: \(error.localizedDescription)")
+             }
         }
     }
     

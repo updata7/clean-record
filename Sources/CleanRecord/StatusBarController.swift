@@ -54,73 +54,82 @@ class StatusBarController: NSObject {
     }
 
     @objc func captureArea() {
-        SelectionWindowManager.shared.startSelection { [weak self] rect in
-            guard let image = ScreenshotManager.shared.captureRect(rect) else { return }
-            self?.handleCapturedImage(image)
+        let sManager = ScreenshotManager.shared
+        Task { @MainActor [weak self] in
+            SelectionWindowManager.shared.startSelection { [weak self] rect in
+                guard let image = sManager.captureRect(rect) else { return }
+                Task { @MainActor [weak self] in
+                    self?.handleCapturedImage(image)
+                }
+            }
         }
     }
 
     @objc func captureFullscreen() {
-        guard let image = ScreenshotManager.shared.captureFullscreen() else { return }
-        handleCapturedImage(image)
+        let sManager = ScreenshotManager.shared
+        Task { @MainActor [weak self] in
+            guard let image = sManager.captureFullscreen() else { return }
+            self?.handleCapturedImage(image)
+        }
     }
 
     @objc func recordScreen() {
-        if #available(macOS 12.3, *) {
-            if let item = statusItem.menu?.item(withTitle: "Record Screen") ?? statusItem.menu?.item(withTitle: "Stop Recording") {
-                if item.title == "Record Screen" {
-                    // Step 1: Select Area
-                    SelectionWindowManager.shared.startSelection { [weak self] rect in
-                        // Step 1.5: Show Persistent Border immediately
-                        RecordingBorderManager.shared.showBorder(for: rect)
-                        
-                        // Step 2: Show Control Bar
-                        let bottomPoint = CGPoint(x: rect.minX, y: rect.minY) 
-                        
-                        ControlBarWindowManager.shared.showControlBar(
-                            at: bottomPoint,
-                            width: rect.width,
-                            onStart: {
-                                // Step 3: Start Recording
-                                ControlBarWindowManager.shared.closeWindow()
+        let sItem = statusItem
+        let stManager = SettingsManager.shared
+        
+        Task { @MainActor [weak self] in
+            if #available(macOS 12.3, *) {
+                let rManager = RecorderManager.shared
+                if let item = sItem.menu?.item(withTitle: "Record Screen") ?? sItem.menu?.item(withTitle: "Stop Recording") {
+                    if item.title == "Record Screen" {
+                        SelectionWindowManager.shared.startSelection { rect in
+                            Task { @MainActor in
+                                RecordingBorderManager.shared.showBorder(for: rect)
                                 
-                                let captureMic = SettingsManager.shared.micEnabled
+                                let bottomPoint = CGPoint(x: rect.minX, y: rect.minY)
                                 
-                                RecorderManager.shared.startRecording(rect: rect, captureAudio: captureMic) { result in
-                                    switch result {
-                                    case .success:
-                                        DispatchQueue.main.async {
-                                            item.title = "Stop Recording"
-                                            self?.statusItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
+                                ControlBarWindowManager.shared.showControlBar(
+                                    at: bottomPoint,
+                                    width: rect.width,
+                                    onStart: {
+                                        Task { @MainActor in
+                                            ControlBarWindowManager.shared.closeWindow()
+                                            
+                                            let captureMic = stManager.micEnabled
+                                            rManager.startRecording(rect: rect, captureAudio: captureMic) { result in
+                                                switch result {
+                                                case .success:
+                                                    Task { @MainActor in
+                                                        item.title = "Stop Recording"
+                                                        sItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
+                                                    }
+                                                case .failure(let error):
+                                                    print("Error: \(error)")
+                                                    Task { @MainActor in
+                                                        RecordingBorderManager.shared.hideBorder()
+                                                    }
+                                                }
+                                            }
                                         }
-                                    case .failure(let error):
-                                        print("Error: \(error)")
-                                        RecordingBorderManager.shared.hideBorder()
+                                    },
+                                    onCancel: {
+                                        Task { @MainActor in
+                                            RecordingBorderManager.shared.hideBorder()
+                                        }
                                     }
-                                }
-                            },
-                            onCancel: {
-                                // User cancelled
-                                RecordingBorderManager.shared.hideBorder()
+                                )
                             }
-                        )
-                    }
-                } else {
-                    // Stop
-                    // Stop recording logic
-                Task {
-                    print("StatusBarController: Stop recording clicked.")
-                    do {
-                        // Reset UI first to feel responsive
-                        DispatchQueue.main.async {
-                            item.title = "Record Screen"
-                            self.statusItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
                         }
-                        
+                    } else {
+                        // Stop
+                        print("StatusBarController: Stop recording clicked.")
                         RecordingBorderManager.shared.hideBorder()
                         CameraOverlayManager.shared.hideCamera()
                         
-                        if let url = await RecorderManager.shared.stopRecording() {
+                        item.title = "Record Screen"
+                        sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
+                        
+                        if let url = await rManager.stopRecording() {
                             print("StatusBarController: Recording stopped successfully at \(url.path)")
                             
                             // Check for 0 bytes file
@@ -134,8 +143,7 @@ class StatusBarController: NSObject {
                                     NSWorkspace.shared.activateFileViewerSelecting([url])
                                 }
                             } else {
-                                print("StatusBarController Error: Recording produced 0 bytes file. Resolution mismatch or capture failed.")
-                                // Clean up 0 byte file
+                                print("StatusBarController Error: Recording produced 0 bytes file.")
                                 try? FileManager.default.removeItem(at: url)
                             }
                         } else {
@@ -146,8 +154,6 @@ class StatusBarController: NSObject {
             }
         }
     }
-}
-
     
     @objc func selectOutputDirectory() {
         let panel = NSOpenPanel()
@@ -164,20 +170,19 @@ class StatusBarController: NSObject {
         }
     }
 
+    @MainActor
     @objc func quitApp() {
         NSApp.terminate(nil)
     }
     
+    @MainActor
     private func handleCapturedImage(_ image: NSImage) {
         // Play shutter sound
         NSSound(named: "Ping")?.play()
         
         // Show overlay
-        OverlayWindowManager.shared.showOverlay(with: image)
-        
-        // Also copy to clipboard by default or based on settings?
-        // CleanShot style: Show overlay, allow copy.
-        // For MVP convenience, let's also put it in clipboard or just show overlay.
-        // Let's rely on overlay for actions.
+        Task { @MainActor in
+            OverlayWindowManager.shared.showOverlay(with: image)
+        }
     }
 }

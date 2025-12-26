@@ -44,18 +44,42 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
                 
                 if let rect = rect {
                     let displayHeight = CGFloat(display.height)
-                    let flippedY = displayHeight - rect.maxY
-                    let scRect = CGRect(x: rect.minX, y: flippedY, width: rect.width, height: rect.height)
+                    // Ensure integer alignment for sourceRect to prevent SCStream silent failure
+                    let scRect = CGRect(
+                        x: floor(rect.minX),
+                        y: floor(displayHeight - rect.minY - rect.height),
+                        width: floor(rect.width),
+                        height: floor(rect.height)
+                    ).integral
+                    
                     streamConfig.sourceRect = scRect
-                    print("RecorderManager: Using flipped sourceRect: \(scRect) (orig: \(rect), displayHeight: \(displayHeight))")
-                } else {
-                    print("RecorderManager: Recording full screen.")
+                    print("RecorderManager: Using SCStream sourceRect: \(scRect) (from Cocoa rect: \(rect), displayHeight: \(displayHeight))")
                 }
                 
                 streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-                streamConfig.queueDepth = 5
+                streamConfig.queueDepth = 8
+                streamConfig.pixelFormat = kCVPixelFormatType_32BGRA
+                streamConfig.showsCursor = true
                 
-                let filter = SCContentFilter(display: display, excludingWindows: [])
+                // Exclude windows: Self (Recording Border) and potentially others
+                var excludedWindows: [SCWindow] = []
+                
+                // borderWindow.windowNumber access should be on MainActor
+                let borderWindowID = await MainActor.run { () -> CGWindowID? in
+                    if let borderWindow = RecordingBorderManager.shared.window {
+                        return CGWindowID(borderWindow.windowNumber)
+                    }
+                    return nil
+                }
+                
+                if let borderWindowID = borderWindowID {
+                    if let scWindow = scContent.windows.first(where: { $0.windowID == borderWindowID }) {
+                        excludedWindows.append(scWindow)
+                        print("RecorderManager: Excluding border window \(borderWindowID)")
+                    }
+                }
+                
+                let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
                 let stream = SCStream(filter: filter, configuration: streamConfig, delegate: self)
                 self.stream = stream
                 
@@ -155,5 +179,10 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
             print("RecorderManager: Error stopping capture: \(error)")
             return nil
         }
+    }
+    
+    // MARK: - SCStreamDelegate
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        print("RecorderManager: SCStream stopped with error: \(error.localizedDescription)")
     }
 }

@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SelectionOverlayView: View {
-    @Binding var selectionRect: CGRect?
     var onConfirm: (CGRect) -> Void
     var onCancel: () -> Void
     
@@ -24,10 +23,6 @@ struct SelectionOverlayView: View {
                             }
                             .onEnded { value in
                                 let rect = rectFromPoints(start: startPoint ?? .zero, end: value.location)
-                                self.selectionRect = rect
-                                // Optionally confirm immediately or wait for user to click a button?
-                                // CleanShot X style: drag to select, release to finish selection (or show tools).
-                                // For MVP: release -> confirm.
                                 onConfirm(rect)
                             }
                     )

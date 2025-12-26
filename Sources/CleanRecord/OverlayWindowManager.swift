@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 class OverlayWindowManager {
     static let shared = OverlayWindowManager()
     

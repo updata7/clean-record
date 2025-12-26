@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 class ControlBarWindowManager {
     static let shared = ControlBarWindowManager()
     

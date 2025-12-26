@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 class SelectionWindowManager: NSObject {
     static let shared = SelectionWindowManager()
     
@@ -30,31 +31,18 @@ class SelectionWindowManager: NSObject {
         
         // Create the SwiftUI view
         let rootView = SelectionOverlayView(
-            selectionRect: .constant(nil),
             onConfirm: { [weak self] rect in
-                // Coordinate conversion:
-                // SwiftUI coordinates (0,0 top-left) usually match window content rect which matches screen frame (bottom-left origin in Cocoa, but SwiftUI abstracts this usually).
-                // However, CGWindowListCreateImage needs global display coordinates.
-                // If the window fills the screen, the point (x, y) in the view corresponds to (x, y) on that screen.
-                // One catch: Cocoa uses bottom-left (0,0). SwiftUI usually top-left.
-                // We need to convert SwiftUI rect to CG rect.
+                // Rect is coming in SwiftUI coordinates (0,0 top-left) relative to the screen.
+                // We need to convert it to Cocoa (0,0 bottom-left) for NSWindow / RecordingBorder.
                 
                 let screenHeight = screen.frame.height
-                // Flip Y for Cocoa/CG if needed. BUT, CGWindowListCreateImage (flipped: false usually?).
-                // Actually CG coordinates are top-left (0,0) for display bounds usually in modern logical coordinates?
-                // Wait, CoreGraphics logic: Main display origin (0,0) is top-left.
-                // AppKit logic: (0,0) is bottom-left.
-                // SwiftUI: (0,0) is top-left.
-                // So if we take SwiftUI rect, it matches CG logic (mostly).
+                let cocoaY = screenHeight - rect.maxY
+                let cocoaRect = CGRect(x: rect.minX, y: cocoaY, width: rect.width, height: rect.height).integral
                 
-                // Let's assume direct mapping for now and debug if flipped.
-                
-                // Convert rect to global screen coordinates (adding result to window origin if window wasn't at 0,0)
-                let globalRect = rect.offsetBy(dx: newWindow.frame.origin.x, dy: 0)
-                // Y-coordinate needs care if screen origin is not 0,0 or handling multi-monitors.
+                print("SelectionWindowManager: Converted SwiftUI \(rect) to Cocoa \(cocoaRect) (screenHeight: \(screenHeight))")
                 
                 self?.closeWindow()
-                self?.onCapture?(globalRect)
+                self?.onCapture?(cocoaRect)
             },
             onCancel: { [weak self] in
                 self?.closeWindow()
