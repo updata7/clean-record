@@ -12,6 +12,10 @@ class StatusBarController: NSObject {
         super.init()
         setupMenu()
     }
+    
+    deinit {
+        print("StatusBarController: Deinitializing! This is likely why the icon disappears.")
+    }
 
     private func setupMenu() {
         if let button = statusItem.button {
@@ -126,8 +130,15 @@ class StatusBarController: NSObject {
                         RecordingBorderManager.shared.hideBorder()
                         CameraOverlayManager.shared.hideCamera()
                         
+                        print("StatusBarController: Resetting icon image and title.")
                         item.title = "Record Screen"
-                        sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
+                        if let image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen") {
+                            sItem.button?.image = image
+                            sItem.button?.title = "" // Clear title if we have image
+                        } else {
+                            sItem.button?.image = nil
+                            sItem.button?.title = "REC"
+                        }
                         
                         if let url = await rManager.stopRecording() {
                             print("StatusBarController: Recording stopped successfully at \(url.path)")

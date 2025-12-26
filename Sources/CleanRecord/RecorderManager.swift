@@ -132,6 +132,18 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
         }
         
         let output = AVCaptureAudioDataOutput()
+        
+        // Force output to a standard format that matches VideoWriter expectations
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
+        ]
+        
         output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "com.cleanrecord.recorder.mic"))
         if session.canAddOutput(output) {
             session.addOutput(output)

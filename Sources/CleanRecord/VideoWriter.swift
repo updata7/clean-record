@@ -22,6 +22,10 @@ class VideoWriter: NSObject, SCStreamOutput {
         super.init()
     }
     
+    deinit {
+        print("VideoWriter: Deinitializing.")
+    }
+    
     private func setupWriter(width: Int, height: Int) throws {
         let writer = try AVAssetWriter(outputURL: fileURL, fileType: .mp4)
         
@@ -62,8 +66,8 @@ class VideoWriter: NSObject, SCStreamOutput {
             let audioSettings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 44100,
-                AVNumberOfChannelsKey: 2, // Stereo is safer
-                AVEncoderBitRateKey: 128000
+                AVNumberOfChannelsKey: 1, // Mono is safer and matches fixed mic output
+                AVEncoderBitRateKey: 64000
             ]
             let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
             aInput.expectsMediaDataInRealTime = true
