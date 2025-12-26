@@ -64,8 +64,8 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
                 }
                 
                 streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 60)
-                streamConfig.queueDepth = 8
-                streamConfig.pixelFormat = kCVPixelFormatType_32BGRA
+                streamConfig.queueDepth = 16
+                streamConfig.pixelFormat = SettingsManager.shared.recommendedPixelFormat
                 streamConfig.showsCursor = true
                 
                 // Exclude windows: Self (Recording Border) and potentially others

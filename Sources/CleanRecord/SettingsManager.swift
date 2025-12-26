@@ -134,4 +134,26 @@ class SettingsManager: ObservableObject {
             }
         }
     }
+
+    // Hardware capabilities
+    var isAppleSilicon: Bool {
+        #if arch(arm64)
+        return true
+        #else
+        return false
+        #endif
+    }
+    
+    var recommendedVideoCodec: String {
+        return isAppleSilicon ? "hevc" : "h264"
+    }
+    
+    var recommendedBitrate: Int {
+        return isAppleSilicon ? 20_000_000 : 12_000_000
+    }
+    
+    var recommendedPixelFormat: OSType {
+        // NV12 is much more efficient for hardware encoders
+        return kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+    }
 }

@@ -24,6 +24,10 @@ class VideoWriter: NSObject, SCStreamOutput {
     // Audio buffering to wait for video start
     private var audioBufferQueue: [CMSampleBuffer] = []
     
+    // Sync tracking
+    private var lastVideoPTS: CMTime = .invalid
+    private var lastAudioPTS: CMTime = .invalid
+    
     init(fileURL: URL, hasAudio: Bool = false) {
         self.fileURL = fileURL
         self.hasAudio = hasAudio
@@ -42,18 +46,26 @@ class VideoWriter: NSObject, SCStreamOutput {
         let adjWidth = width % 2 == 0 ? width : width - 1
         let adjHeight = height % 2 == 0 ? height : height - 1
         
+        let codecType = SettingsManager.shared.recommendedVideoCodec == "hevc" ? AVVideoCodecType.hevc : AVVideoCodecType.h264
+        let bitrate = SettingsManager.shared.recommendedBitrate
+        
         let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoCodecKey: codecType,
             AVVideoWidthKey: adjWidth,
             AVVideoHeightKey: adjHeight,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: bitrate,
+                AVVideoExpectedSourceFrameRateKey: 60
+            ],
             AVVideoScalingModeKey: AVVideoScalingModeResizeAspect
         ]
         
         let vInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         vInput.expectsMediaDataInRealTime = true
         
+        let pixelFormat = SettingsManager.shared.recommendedPixelFormat
         let attributes: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferPixelFormatTypeKey as String: pixelFormat,
             kCVPixelBufferWidthKey as String: adjWidth,
             kCVPixelBufferHeightKey as String: adjHeight
         ]
@@ -74,8 +86,8 @@ class VideoWriter: NSObject, SCStreamOutput {
             let audioSettings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 44100,
-                AVNumberOfChannelsKey: 1, // Mono is safer and matches fixed mic output
-                AVEncoderBitRateKey: 64000
+                AVNumberOfChannelsKey: 1,
+                AVEncoderBitRateKey: 128000
             ]
             let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
             aInput.expectsMediaDataInRealTime = true
@@ -122,7 +134,7 @@ class VideoWriter: NSObject, SCStreamOutput {
             setupOnFirstFrame(sampleBuffer)
         }
         
-        guard let writer = assetWriter, let videoInput = videoInput, isWriting else { return }
+        guard let writer = assetWriter, let _ = videoInput, isWriting else { return }
         
         if writer.status != .writing {
             if writer.status == .failed {
@@ -156,33 +168,48 @@ class VideoWriter: NSObject, SCStreamOutput {
         // Adjust timestamp
         let adjustedTime = CMTimeSubtract(currentTime, totalPausedDuration)
         
-        if videoInput.isReadyForMoreMediaData {
-            var timing = CMSampleTimingInfo(
-                duration: CMSampleBufferGetDuration(sampleBuffer),
-                presentationTimeStamp: adjustedTime,
-                decodeTimeStamp: .invalid
-            )
-            
-            var adjustedBuffer: CMSampleBuffer?
-            let status = CMSampleBufferCreateCopyWithNewTiming(
-                allocator: kCFAllocatorDefault,
-                sampleBuffer: sampleBuffer,
-                sampleTimingEntryCount: 1,
-                sampleTimingArray: &timing,
-                sampleBufferOut: &adjustedBuffer
-            )
-            
-            if status == noErr, let buffer = adjustedBuffer {
-                if !videoInput.append(buffer) {
-                    print("VideoWriter Error: Failed to append video buffer. Status: \(writer.status.rawValue), Error: \(String(describing: writer.error))")
-                } else {
-                    frameCounter += 1
-                    if frameCounter == 1 {
-                        processPendingAudio()
-                    }
-                    if frameCounter <= 10 || frameCounter % 100 == 0 {
-                        print("VideoWriter: Stream activity - recorded \(frameCounter) frames (adjusted PTS: \(adjustedTime.seconds)).")
-                    }
+        // Ensure monotonically increasing timestamps (AVAssetWriter requirement)
+        if lastVideoPTS.isValid && adjustedTime <= lastVideoPTS {
+            // Drop or slightly increment. SCK frames usually come in with unique timestamps.
+            // If we hit a duplicate due to pause adjustment, we push it forward slightly.
+            let tinyIncrement = CMTime(value: 1, timescale: 1000000) // 1 microsecond
+            let forcedTime = CMTimeAdd(lastVideoPTS, tinyIncrement)
+            writeVideoFrame(sampleBuffer, at: forcedTime)
+            lastVideoPTS = forcedTime
+        } else {
+            writeVideoFrame(sampleBuffer, at: adjustedTime)
+            lastVideoPTS = adjustedTime
+        }
+    }
+
+    private func writeVideoFrame(_ sampleBuffer: CMSampleBuffer, at adjustedTime: CMTime) {
+        guard let videoInput = videoInput, videoInput.isReadyForMoreMediaData else { return }
+        
+        var timing = CMSampleTimingInfo(
+            duration: CMSampleBufferGetDuration(sampleBuffer),
+            presentationTimeStamp: adjustedTime,
+            decodeTimeStamp: .invalid
+        )
+        
+        var adjustedBuffer: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(
+            allocator: kCFAllocatorDefault,
+            sampleBuffer: sampleBuffer,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleBufferOut: &adjustedBuffer
+        )
+        
+        if status == noErr, let buffer = adjustedBuffer {
+            if !videoInput.append(buffer) {
+                print("VideoWriter Error: Failed to append video buffer. Status: \(assetWriter?.status.rawValue ?? -1), Error: \(String(describing: assetWriter?.error))")
+            } else {
+                frameCounter += 1
+                if frameCounter == 1 {
+                    processPendingAudio()
+                }
+                if frameCounter <= 10 || frameCounter % 100 == 0 {
+                    print("VideoWriter: Stream activity - recorded \(frameCounter) frames (adjusted PTS: \(adjustedTime.seconds)).")
                 }
             }
         }
@@ -232,9 +259,18 @@ class VideoWriter: NSObject, SCStreamOutput {
         // Adjust timestamp for pauses
         let adjustedTime = CMTimeSubtract(currentTime, totalPausedDuration)
         
+        // Ensure monotonically increasing for audio as well
+        let finalTime: CMTime
+        if lastAudioPTS.isValid && adjustedTime <= lastAudioPTS {
+            finalTime = CMTimeAdd(lastAudioPTS, CMTime(value: 1, timescale: 1000000))
+        } else {
+            finalTime = adjustedTime
+        }
+        lastAudioPTS = finalTime
+
         var timing = CMSampleTimingInfo(
             duration: CMSampleBufferGetDuration(sampleBuffer),
-            presentationTimeStamp: adjustedTime,
+            presentationTimeStamp: finalTime,
             decodeTimeStamp: .invalid
         )
         
