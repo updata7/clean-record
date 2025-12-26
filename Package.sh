@@ -79,7 +79,17 @@ if [ -f "$ICON_SOURCE" ]; then
     
     iconutil -c icns "$ICONSET_DIR" -o "$RESOURCES_DIR/AppIcon.icns"
     rm -rf "$ICONSET_DIR"
+    
+    echo "🔄 Refreshing icon cache..."
+    # Touch the app to update modification date
+    touch "$BUNDLE_DIR"
+    # Force Finder to refresh icon cache
+    killall Finder 2>/dev/null || true
+    # Register the app with Launch Services
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$BUNDLE_DIR"
 fi
 
 echo "✅ Success! Your app is ready at: $BUNDLE_DIR"
 echo "👉 You can now move $APP_NAME.app to your Applications folder."
+echo "💡 If the icon doesn't appear immediately, log out and back in, or run:"
+echo "   killall Dock && killall Finder"
