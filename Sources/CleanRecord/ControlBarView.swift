@@ -117,6 +117,8 @@ struct ControlBarView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .help("Cancel")
+            
+            Divider().frame(height: 20)
         }
         .padding(10)
         .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow).cornerRadius(25))
@@ -124,6 +126,23 @@ struct ControlBarView: View {
             RoundedRectangle(cornerRadius: 25)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
+    }
+    
+    private var ratioLabel: String {
+        if let ratio = settings.selectionAspectRatio {
+            if abs(ratio - 16.0/9.0) < 0.01 { return "16:9" }
+            if abs(ratio - 4.0/3.0) < 0.01 { return "4:3" }
+            if abs(ratio - 1.0) < 0.01 { return "1:1" }
+            if abs(ratio - 9.0/16.0) < 0.01 { return "9:16" }
+            if abs(ratio - 6.0/7.0) < 0.01 { return "6:7" }
+            return String(format: "%.1f", ratio)
+        }
+        return "Free"
+    }
+    
+    private func updateRatio(_ ratio: Double?) {
+        settings.selectionAspectRatio = ratio
+        settings.updateRecordingRect()
     }
 }
 

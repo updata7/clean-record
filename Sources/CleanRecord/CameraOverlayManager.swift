@@ -30,10 +30,10 @@ class CameraOverlayManager {
         let width = baseSize * scale
         let height = (settings.cameraShape == "rectangle" ? 150 : 200) * scale
         
-        // Use lastRecordingRect for initial placement (bottom-left)
+        // Use lastRecordingRect for initial placement (bottom-right with 20px padding)
         var origin = CGPoint(x: 100, y: 100) // Fallback
         if let rect = settings.lastRecordingRect {
-            origin = CGPoint(x: rect.minX, y: rect.minY)
+            origin = CGPoint(x: rect.maxX - width - 20, y: rect.minY + 20)
         }
         
         let panel = NSPanel(

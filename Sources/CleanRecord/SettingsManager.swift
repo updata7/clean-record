@@ -14,7 +14,8 @@ class SettingsManager: ObservableObject {
     private let kCameraShape = "cameraShape"
     private let kCameraScale = "cameraScale"
     private let kBeautyEnabled = "beautyEnabled"
-    private let kBeautyLevel = "beautyLevel"
+    private let kBeautyLevel = "beauty_level"
+    private let kSelectionAspectRatio = "selectionAspectRatio"
     
     // Published properties for UI binding
     @Published var micEnabled: Bool {
@@ -45,6 +46,10 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(beautyLevel, forKey: kBeautyLevel) }
     }
     
+    @Published var selectionAspectRatio: Double? {
+        didSet { defaults.set(selectionAspectRatio ?? 0, forKey: kSelectionAspectRatio) }
+    }
+    
     // Non-persistent state for current session
     @Published var lastRecordingRect: NSRect? = nil
     
@@ -59,6 +64,9 @@ class SettingsManager: ObservableObject {
         
         self.beautyEnabled = defaults.bool(forKey: kBeautyEnabled)
         self.beautyLevel = defaults.double(forKey: kBeautyLevel)
+        
+        let savedRatio = defaults.double(forKey: kSelectionAspectRatio)
+        self.selectionAspectRatio = savedRatio == 0 ? nil : savedRatio
     }
     
     var outputDirectory: URL {
@@ -79,5 +87,51 @@ class SettingsManager: ObservableObject {
     func setOutputDirectory(to url: URL) {
         // Save bookmark data if needed for sandboxed apps, but for now just path
         self.outputDirectory = url
+    }
+    
+    // Adjusts a rect to match a target aspect ratio while preserving the center
+    func adjustRect(_ rect: NSRect, to ratio: Double?) -> NSRect {
+        guard let ratio = ratio else { return rect }
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        
+        var newWidth = rect.width
+        var newHeight = rect.height
+        
+        if newWidth / newHeight > ratio {
+            // Rect is too wide, shrink width
+            newWidth = newHeight * ratio
+        } else {
+            // Rect is too tall, shrink height
+            newHeight = newWidth / ratio
+        }
+        
+        return NSRect(
+            x: center.x - newWidth / 2,
+            y: center.y - newHeight / 2,
+            width: newWidth,
+            height: newHeight
+        ).integral
+    }
+
+    // Applies the current selectionAspectRatio to lastRecordingRect and updates UI
+    func updateRecordingRect() {
+        guard let currentRect = lastRecordingRect else { return }
+        let newRect = adjustRect(currentRect, to: selectionAspectRatio)
+        
+        if newRect != currentRect {
+            self.lastRecordingRect = newRect // This will trigger UI updates
+            
+            // Update UI
+            Task { @MainActor in
+                RecordingBorderManager.shared.showBorder(for: newRect)
+                
+                // Update Control Bar position (bottomPoint)
+                // This is a simplified approach. A more robust solution might involve
+                // passing a window reference or using notifications.
+                // For now, we assume the ControlBarWindowManager will react to border changes
+                // or that the user will reposition if needed.
+                // ControlBarWindowManager.shared.updatePosition(for: newRect) // If such a method existed
+            }
+        }
     }
 }
