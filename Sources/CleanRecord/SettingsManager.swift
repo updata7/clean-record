@@ -45,6 +45,9 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(beautyLevel, forKey: kBeautyLevel) }
     }
     
+    // Non-persistent state for current session
+    @Published var lastRecordingRect: NSRect? = nil
+    
     init() {
         self.micEnabled = defaults.object(forKey: kMicEnabled) as? Bool ?? false
         self.systemAudioEnabled = defaults.object(forKey: kSystemAudioEnabled) as? Bool ?? false

@@ -9,15 +9,40 @@ mac 录屏软件
 
 #### 安装教程
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1.  克隆本仓库到本地。
+2.  确保已安装 Xcode 命令行工具 (`xcode-select --install`)。
+3.  在终端进入项目根目录。
 
 #### 使用说明
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+1.  **开发调试**: 运行 `swift run` 或使用 Xcode 打开 `Package.swift`。
+2.  **打包发布**: 见下方的 "打包发布" 章节。
+
+#### 打包发布 (Packaging)
+
+本项目提供了一个自动打包脚本 `Package.sh`，可以将程序打包成标准的 macOS `.app` 应用程序。
+
+1.  **自动打包**:
+    ```bash
+    ./Package.sh
+    ```
+    打包完成后，在 `build/` 目录下会生成 `CleanRecord.app`。您可以直接将其拖入 "应用程序" (Applications) 文件夹。
+
+2.  **脚本包含的内容**:
+    - 使用 `swift build -c release` 编译发布版。
+    - 自动创建 `Contents/MacOS` 和 `Contents/Resources` 目录结构。
+    - 自动生成 `Info.plist`（包含摄像头和麦克风权限声明）。
+    - 自动从 PNG 图标生成高分辨率的 `.icns` 图标集。
+
+3.  **手动打包步骤**:
+    如果你想手动操作，步骤如下：
+    - 编译：`swift build -c release`
+    - 创建目录：`mkdir -p CleanRecord.app/Contents/MacOS`
+    - 拷贝文件：`cp .build/release/CleanRecord CleanRecord.app/Contents/MacOS/`
+    - 添加 `Info.plist` 到 `CleanRecord.app/Contents/`。
+
+> [!TIP]
+> 如果您需要在其他没有安装开发环境的 Mac 上运行，建议在打包后进行公证 (Notarization)，或者在首次运行时在 "系统设置 -> 隐私与安全性" 中点击 "仍要打开"。
 
 #### 参与贡献
 

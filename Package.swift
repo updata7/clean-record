@@ -21,7 +21,10 @@ let package = Package(
         .executableTarget(
             name: "CleanRecord",
             dependencies: [],
-            path: "Sources"
+            path: "Sources",
+            resources: [
+                .process("CleanRecord/Resources")
+            ]
         ),
     ]
 )

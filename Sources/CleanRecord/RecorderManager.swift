@@ -26,14 +26,12 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
     func startRecording(rect: CGRect? = nil, captureAudio: Bool = false, completion: @escaping (Result<Void, Error>) -> Void) {
         print("RecorderManager: startRecording requested. rect=\(String(describing: rect)), captureAudio=\(captureAudio)")
         
-        // Check for Screen Recording permission (macOS 10.15+)
-        if #available(macOS 10.15, *) {
-            let canRecord = CGPreflightScreenCaptureAccess()
-            print("RecorderManager: CGPreflightScreenCaptureAccess = \(canRecord)")
-            if !canRecord {
-                print("RecorderManager ERROR: No Screen Recording permission!")
-                // Don't fail immediately, but log it clearly
-            }
+        // Check for Screen Recording permission
+        let canRecord = CGPreflightScreenCaptureAccess()
+        print("RecorderManager: CGPreflightScreenCaptureAccess = \(canRecord)")
+        if !canRecord {
+            print("RecorderManager ERROR: No Screen Recording permission!")
+            // Don't fail immediately, but log it clearly
         }
         
         Task {

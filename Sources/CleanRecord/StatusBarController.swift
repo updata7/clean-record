@@ -102,13 +102,14 @@ class StatusBarController: NSObject {
         let sItem = statusItem
         let stManager = SettingsManager.shared
         
-        Task { @MainActor [weak self] in
+        Task { @MainActor in
             if #available(macOS 12.3, *) {
                 let rManager = RecorderManager.shared
                 if let item = sItem.menu?.item(withTitle: "Record Screen") ?? sItem.menu?.item(withTitle: "Stop Recording") {
                     if item.title == "Record Screen" {
                         SelectionWindowManager.shared.startSelection { rect in
                             Task { @MainActor in
+                                stManager.lastRecordingRect = rect
                                 RecordingBorderManager.shared.showBorder(for: rect)
                                 
                                 let bottomPoint = CGPoint(x: rect.minX, y: rect.minY)

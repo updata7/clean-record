@@ -23,9 +23,21 @@ class CameraOverlayManager {
     }
     
     private func createWindow() {
-        // Default size 200x200
+        // Default base size 200x200
+        let settings = SettingsManager.shared
+        let baseSize: CGFloat = 200
+        let scale = CGFloat(settings.cameraScale)
+        let width = baseSize * scale
+        let height = (settings.cameraShape == "rectangle" ? 150 : 200) * scale
+        
+        // Use lastRecordingRect for initial placement (bottom-left)
+        var origin = CGPoint(x: 100, y: 100) // Fallback
+        if let rect = settings.lastRecordingRect {
+            origin = CGPoint(x: rect.minX, y: rect.minY)
+        }
+        
         let panel = NSPanel(
-            contentRect: NSRect(x: 100, y: 100, width: 200, height: 200),
+            contentRect: NSRect(origin: origin, size: CGSize(width: width, height: height)),
             styleMask: [.borderless, .resizable, .nonactivatingPanel, .hudWindow],
             backing: .buffered,
             defer: false
@@ -34,7 +46,7 @@ class CameraOverlayManager {
         panel.level = .floating
         panel.backgroundColor = .clear
         panel.isMovableByWindowBackground = true
-        panel.hasShadow = false // shadow handled by view
+        panel.hasShadow = false
         self.window = panel
     }
 }
