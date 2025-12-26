@@ -5,23 +5,21 @@ struct ControlBarView: View {
     var onCancel: () -> Void
     
     @ObservedObject var settings = SettingsManager.shared
+    @State private var isShowingBeauty = false
+    @State private var isShowingScale = false
+    
+    private func shapeIcon(_ shape: String) -> String {
+        switch shape {
+        case "circle": return "circle"
+        case "square": return "square"
+        default: return "rectangle"
+        }
+    }
     
     var body: some View {
         HStack(spacing: 12) {
             // Microphone Toggle
-            Toggle(isOn: $settings.micEnabled) {
-                Image(systemName: settings.micEnabled ? "mic.fill" : "mic.slash.fill")
-            }
-            .toggleStyle(.button)
-            .help("Microphone Audio")
-            
-            // System Audio Toggle (Placeholder logic for now)
-            Toggle(isOn: $settings.systemAudioEnabled) {
-                Image(systemName: settings.systemAudioEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-            }
-            .toggleStyle(.button)
-            .help("System Audio (Requires macOS 13+ or driver)")
-            .disabled(true) // Disabled for macOS 12 MVP
+            ToggleBtn(isOn: $settings.micEnabled, icon: "mic.slash.fill", activeIcon: "mic.fill", help: "Microphone Audio")
             
             // Camera Toggle
             Toggle(isOn: $settings.cameraEnabled) {
@@ -35,6 +33,66 @@ struct ControlBarView: View {
                 } else {
                     CameraOverlayManager.shared.hideCamera()
                 }
+            }
+            
+            if settings.cameraEnabled {
+                Divider().frame(height: 20)
+                
+                // Shape Toggle (Menu is fine for this)
+                Menu {
+                    Button("Circle") { settings.cameraShape = "circle" }
+                    Button("Square") { settings.cameraShape = "square" }
+                    Button("Rectangle") { settings.cameraShape = "rectangle" }
+                } label: {
+                    Image(systemName: shapeIcon(settings.cameraShape))
+                        .foregroundColor(.blue)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 24)
+                .help("Camera Shape")
+                
+                // Continuous Scale Control
+                Button(action: { isShowingScale.toggle() }) {
+                    Text("\(Int(settings.cameraScale * 100))%")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(.blue)
+                        .frame(width: 40)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $isShowingScale) {
+                    VStack(spacing: 8) {
+                        Text("\(Int(settings.cameraScale * 100))%")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.blue)
+                        
+                        VerticalSlider(value: $settings.cameraScale, range: 0.2...3.0)
+                            .frame(height: 100)
+                    }
+                    .padding(12)
+                }
+                .help("Camera Scale")
+                
+                // Beauty Slider Popover
+                Button(action: { isShowingBeauty.toggle() }) {
+                    Image(systemName: settings.beautyLevel > 0 ? "face.smiling.fill" : "face.smiling")
+                        .foregroundColor(settings.beautyLevel > 0 ? .pink : .primary)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $isShowingBeauty) {
+                    VStack(spacing: 8) {
+                        Text("\(Int(settings.beautyLevel * 100))")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.pink)
+                        
+                        VerticalSlider(value: $settings.beautyLevel, range: 0...1)
+                            .frame(height: 100)
+                            .onChange(of: settings.beautyLevel) { val in
+                                settings.beautyEnabled = (val > 0)
+                            }
+                    }
+                    .padding(12)
+                }
+                .help("Beauty Filter")
             }
             
             Divider()

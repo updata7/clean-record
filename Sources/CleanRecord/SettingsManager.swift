@@ -33,7 +33,7 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(cameraShape, forKey: kCameraShape) }
     }
     
-    @Published var cameraScale: CGFloat {
+    @Published var cameraScale: Double {
         didSet { defaults.set(cameraScale, forKey: kCameraScale) }
     }
     
@@ -41,22 +41,21 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(beautyEnabled, forKey: kBeautyEnabled) }
     }
     
-    @Published var beautyLevel: Int {
+    @Published var beautyLevel: Double {
         didSet { defaults.set(beautyLevel, forKey: kBeautyLevel) }
     }
     
     init() {
         self.micEnabled = defaults.object(forKey: kMicEnabled) as? Bool ?? false
         self.systemAudioEnabled = defaults.object(forKey: kSystemAudioEnabled) as? Bool ?? false
-        
-        // Camera starts closed
         self.cameraEnabled = false
-        
-        // Load persistent camera settings
         self.cameraShape = defaults.string(forKey: kCameraShape) ?? "circle"
-        self.cameraScale = defaults.object(forKey: kCameraScale) as? CGFloat ?? 1.0
+        
+        let savedScale = defaults.double(forKey: kCameraScale)
+        self.cameraScale = savedScale == 0 ? 1.0 : savedScale
+        
         self.beautyEnabled = defaults.bool(forKey: kBeautyEnabled)
-        self.beautyLevel = defaults.integer(forKey: kBeautyLevel)
+        self.beautyLevel = defaults.double(forKey: kBeautyLevel)
     }
     
     var outputDirectory: URL {

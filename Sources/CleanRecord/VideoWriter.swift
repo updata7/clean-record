@@ -21,6 +21,9 @@ class VideoWriter: NSObject, SCStreamOutput {
     private var totalPausedDuration: CMTime = .zero
     private var lastPausedTime: CMTime?
     
+    // Audio buffering to wait for video start
+    private var audioBufferQueue: [CMSampleBuffer] = []
+    
     init(fileURL: URL, hasAudio: Bool = false) {
         self.fileURL = fileURL
         self.hasAudio = hasAudio
@@ -174,6 +177,9 @@ class VideoWriter: NSObject, SCStreamOutput {
                     print("VideoWriter Error: Failed to append video buffer. Status: \(writer.status.rawValue), Error: \(String(describing: writer.error))")
                 } else {
                     frameCounter += 1
+                    if frameCounter == 1 {
+                        processPendingAudio()
+                    }
                     if frameCounter <= 10 || frameCounter % 100 == 0 {
                         print("VideoWriter: Stream activity - recorded \(frameCounter) frames (adjusted PTS: \(adjustedTime.seconds)).")
                     }
@@ -194,8 +200,31 @@ class VideoWriter: NSObject, SCStreamOutput {
         }
     }
     
+    private func processPendingAudio() {
+        print("VideoWriter: Flushing \(audioBufferQueue.count) pending audio buffers.")
+        let buffers = audioBufferQueue
+        audioBufferQueue.removeAll()
+        for buffer in buffers {
+            appendAudioInternal(buffer)
+        }
+    }
+    
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
-        guard sessionStarted, !isPaused, let startTime = startTime, let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
+        guard isWriting, !isPaused, audioInput != nil else { return }
+        
+        if !sessionStarted || frameCounter == 0 {
+            // Buffer audio until first video frame is written
+            if audioBufferQueue.count < 1000 { // Safety limit
+                audioBufferQueue.append(sampleBuffer)
+            }
+            return
+        }
+        
+        appendAudioInternal(sampleBuffer)
+    }
+    
+    private func appendAudioInternal(_ sampleBuffer: CMSampleBuffer) {
+        guard let startTime = startTime, let audioInput = audioInput, audioInput.isReadyForMoreMediaData else { return }
         
         let currentTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if currentTime < startTime { return }

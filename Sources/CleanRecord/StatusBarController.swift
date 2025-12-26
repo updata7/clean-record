@@ -143,6 +143,9 @@ class StatusBarController: NSObject {
                                     onCancel: {
                                         Task { @MainActor in
                                             RecordingBorderManager.shared.hideBorder()
+                                            CameraOverlayManager.shared.hideCamera()
+                                            CameraSessionManager.shared.stop()
+                                            stManager.cameraEnabled = false
                                         }
                                     }
                                 )
@@ -153,6 +156,7 @@ class StatusBarController: NSObject {
                         print("StatusBarController: Stop recording clicked.")
                         RecordingBorderManager.shared.hideBorder()
                         CameraOverlayManager.shared.hideCamera()
+                        CameraSessionManager.shared.stop() // Kill hardware light
                         
                         print("StatusBarController: Resetting icon image and title.")
                         item.title = "Record Screen"
