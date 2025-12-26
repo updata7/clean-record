@@ -24,11 +24,16 @@ class StatusBarController: NSObject {
         menu.addItem(NSMenuItem.separator())
         
         if let button = statusItem.button {
-            // Using a system symbol for now, similar to a camera or lens
-            button.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "CleanRecord")
-            if button.image == nil {
-                button.title = "REC"
+            // Use custom Nano Banana logo from Resources
+            let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
+            if let image = NSImage(contentsOfFile: iconPath) {
+                image.size = NSSize(width: 18, height: 18)
+                image.isTemplate = true // Allows it to change color in Dark Mode
+                button.image = image
+            } else {
+                button.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "CleanRecord")
             }
+            
             button.action = #selector(menuWillOpen)
         }
         
@@ -151,13 +156,16 @@ class StatusBarController: NSObject {
                         
                         print("StatusBarController: Resetting icon image and title.")
                         item.title = "Record Screen"
-                        if let image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen") {
+                        
+                        let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
+                        if let image = NSImage(contentsOfFile: iconPath) {
+                            image.size = NSSize(width: 18, height: 18)
+                            image.isTemplate = true
                             sItem.button?.image = image
-                            sItem.button?.title = "" // Clear title if we have image
                         } else {
-                            sItem.button?.image = nil
-                            sItem.button?.title = "REC"
+                            sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
                         }
+                        sItem.button?.title = ""
                         
                         // Hide Pause/Resume
                         sItem.menu?.item(withTitle: "Pause Recording")?.isHidden = true
@@ -171,11 +179,8 @@ class StatusBarController: NSObject {
                             let fileSize = attr?[.size] as? UInt64 ?? 0
                             
                             if fileSize > 0 {
-                                if let thumbnail = ScreenshotManager.shared.generateThumbnail(for: url) {
-                                    OverlayWindowManager.shared.showOverlay(with: thumbnail)
-                                } else {
-                                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                                }
+                                // v2.2 refinement: Reveal in Finder instead of showing overlay
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
                             } else {
                                 print("StatusBarController Error: Recording produced 0 bytes file.")
                                 try? FileManager.default.removeItem(at: url)

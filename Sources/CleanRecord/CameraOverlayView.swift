@@ -55,14 +55,23 @@ struct CameraOverlayView: View {
                         }
                         .buttonStyle(.plain)
                         
-                        Button(action: { settings.beautyEnabled.toggle() }) {
-                            Image(systemName: settings.beautyEnabled ? "face.smiling.fill" : "face.smiling")
-                                .padding(6)
-                                .background(settings.beautyEnabled ? Color.pink : Color.black.opacity(0.6))
-                                .clipShape(Circle())
+                        Button(action: { 
+                            settings.beautyLevel = (settings.beautyLevel + 1) % 4
+                            settings.beautyEnabled = (settings.beautyLevel > 0)
+                        }) {
+                            HStack(spacing: 2) {
+                                Image(systemName: settings.beautyLevel == 0 ? "face.smiling" : "face.smiling.fill")
+                                if settings.beautyLevel > 0 {
+                                    Text("\(settings.beautyLevel)")
+                                        .font(.caption2.bold())
+                                }
+                            }
+                            .padding(6)
+                            .background(beautyColor(for: settings.beautyLevel))
+                            .clipShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                        .help("Beauty Mode")
+                        .help(beautyHelp(for: settings.beautyLevel))
 
                         Spacer()
                         
@@ -123,6 +132,24 @@ struct CameraOverlayView: View {
                 }
         )
     }
+    
+    private func beautyColor(for level: Int) -> Color {
+        switch level {
+        case 1: return .green.opacity(0.8)
+        case 2: return .blue.opacity(0.8)
+        case 3: return .pink.opacity(0.8)
+        default: return .black.opacity(0.6)
+        }
+    }
+    
+    private func beautyHelp(for level: Int) -> String {
+        switch level {
+        case 1: return "Beauty: Natural"
+        case 2: return "Beauty: Smooth"
+        case 3: return "Beauty: Glamour"
+        default: return "Beauty: Off"
+        }
+    }
 }
 
 struct CameraPreview: NSViewRepresentable {
@@ -143,6 +170,7 @@ class FilteredCameraView: NSView, AVCaptureVideoDataOutputSampleBufferDelegate {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
+        layer?.contentsGravity = .resizeAspectFill
         setupSession()
     }
     
@@ -169,20 +197,31 @@ class FilteredCameraView: NSView, AVCaptureVideoDataOutputSampleBufferDelegate {
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         var ciImage = CIImage(cvPixelBuffer: imageBuffer)
         
-        // Match orientation if needed (not usually needed for webcam on Mac)
-        
-        if SettingsManager.shared.beautyEnabled {
-            // Basic skin smoothing using Bilateral Filter
+        let settings = SettingsManager.shared
+        if settings.beautyEnabled {
             let filter = CIFilter(name: "CIBilateralFilter")
             filter?.setValue(ciImage, forKey: kCIInputImageKey)
-            filter?.setValue(3.0, forKey: "inputRadius") // Small radius for subtlety
-            filter?.setValue(0.02, forKey: "inputSoftness")
+            
+            // Scaled parameters based on beautyLevel
+            switch settings.beautyLevel {
+            case 1: // Natural
+                filter?.setValue(2.0, forKey: "inputRadius")
+                filter?.setValue(0.015, forKey: "inputSoftness")
+            case 2: // Smooth
+                filter?.setValue(4.0, forKey: "inputRadius")
+                filter?.setValue(0.03, forKey: "inputSoftness")
+            case 3: // Glamour
+                filter?.setValue(7.0, forKey: "inputRadius")
+                filter?.setValue(0.06, forKey: "inputSoftness")
+            default: break
+            }
             
             if let outputImage = filter?.outputImage {
                 ciImage = outputImage
             }
         }
         
+        // Ensure aspect ratio is preserved during rendering
         if let cgImage = context.createCGImage(ciImage, from: ciImage.extent) {
             DispatchQueue.main.async { [weak self] in
                 self?.layer?.contents = cgImage

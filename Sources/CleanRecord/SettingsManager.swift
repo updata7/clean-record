@@ -14,6 +14,7 @@ class SettingsManager: ObservableObject {
     private let kCameraShape = "cameraShape"
     private let kCameraScale = "cameraScale"
     private let kBeautyEnabled = "beautyEnabled"
+    private let kBeautyLevel = "beautyLevel"
     
     // Published properties for UI binding
     @Published var micEnabled: Bool {
@@ -40,6 +41,10 @@ class SettingsManager: ObservableObject {
         didSet { defaults.set(beautyEnabled, forKey: kBeautyEnabled) }
     }
     
+    @Published var beautyLevel: Int {
+        didSet { defaults.set(beautyLevel, forKey: kBeautyLevel) }
+    }
+    
     init() {
         self.micEnabled = defaults.object(forKey: kMicEnabled) as? Bool ?? false
         self.systemAudioEnabled = defaults.object(forKey: kSystemAudioEnabled) as? Bool ?? false
@@ -51,6 +56,7 @@ class SettingsManager: ObservableObject {
         self.cameraShape = defaults.string(forKey: kCameraShape) ?? "circle"
         self.cameraScale = defaults.object(forKey: kCameraScale) as? CGFloat ?? 1.0
         self.beautyEnabled = defaults.bool(forKey: kBeautyEnabled)
+        self.beautyLevel = defaults.integer(forKey: kBeautyLevel)
     }
     
     var outputDirectory: URL {
