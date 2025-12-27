@@ -94,7 +94,6 @@ cp Info.plist CleanRecord.app/Contents/
 
 <div align="center">
   <img src="assets/contact-qr.png" width="200" alt="联系二维码">
-  <p><i>扫码联系开发者</i></p>
 </div>
 
 ---
