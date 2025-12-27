@@ -1,0 +1,50 @@
+/* Menu Items */
+"menu.about" = "About CleanRecord";
+"menu.capture_area" = "Capture Area";
+"menu.capture_fullscreen" = "Capture Fullscreen";
+"menu.record_screen" = "Record Screen";
+"menu.record_fullscreen" = "Record Fullscreen";
+"menu.stop_recording" = "Stop Recording";
+"menu.pause_recording" = "Pause Recording";
+"menu.resume_recording" = "Resume Recording";
+"menu.select_output_folder" = "Select Output Folder...";
+"menu.language" = "Language";
+"menu.quit" = "Quit CleanRecord";
+
+/* Control Bar */
+"control.microphone_audio" = "Microphone Audio";
+"control.camera_overlay" = "Camera Overlay";
+"control.camera_shape" = "Camera Shape";
+"control.camera_scale" = "Camera Scale";
+"control.beauty_filter" = "Beauty Filter";
+"control.start_recording" = "Start Recording";
+"control.cancel" = "Cancel";
+
+/* Camera Shapes */
+"shape.circle" = "Circle";
+"shape.square" = "Square";
+"shape.rectangle" = "Rectangle";
+
+/* About Dialog */
+"about.title" = "CleanRecord";
+"about.version" = "Version 2.1";
+"about.description" = "A sleek screen recorder with Nano Banana energy.";
+"about.ok" = "OK";
+
+/* File Panel */
+"panel.select_folder" = "Select Folder";
+
+/* Languages */
+"language.english" = "English";
+"language.chinese" = "中文";
+"language.system" = "System Default";
+
+/* Notifications */
+"notification.recording_started" = "Recording started";
+"notification.recording_stopped" = "Recording stopped";
+"notification.screenshot_saved" = "Screenshot saved";
+
+/* Errors */
+"error.recording_failed" = "Recording failed";
+"error.permission_denied" = "Permission denied. Please grant screen recording permission in System Preferences.";
+"error.file_save_failed" = "Failed to save file";

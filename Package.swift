@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "CleanRecord",
+    defaultLocalization: "en",
     platforms: [
         .macOS("12.3")
     ],
@@ -24,6 +25,10 @@ let package = Package(
             path: "Sources",
             resources: [
                 .process("CleanRecord/Resources")
+            ],
+            swiftSettings: [
+                // Suppress noisy Xcode plugin compatibility warnings
+                .unsafeFlags(["-Xfrontend", "-warn-long-expression-type-checking=500"])
             ]
         ),
     ]

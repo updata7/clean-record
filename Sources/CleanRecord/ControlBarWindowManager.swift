@@ -24,11 +24,22 @@ class ControlBarWindowManager {
         
         window?.contentView = NSHostingView(rootView: contentView)
         
-        // Center horizontally relative to the selection, below it
-        let windowWidth: CGFloat = 280 // Estimated width
+        // Center horizontally relative to the selection
+        let windowWidth: CGFloat = 280
+        let windowHeight: CGFloat = 50
         let x = point.x + (width - windowWidth) / 2
-        let y = point.y - 60 // Below the rect (rect origin is bottom-left usually?)
-        // We'll trust the caller passes a good point (bottom-center of selection)
+        
+        // Position the control bar above the bottom of the screen
+        // If point.y is at bottom (0 or low), place it higher up
+        var y = point.y + 100 // Place it 100 pixels above the bottom point
+        
+        // Make sure it's not off the top of the screen
+        if let screen = NSScreen.main {
+            let maxY = screen.frame.height - windowHeight - 20
+            if y > maxY {
+                y = maxY
+            }
+        }
         
         window?.setFrameOrigin(NSPoint(x: x, y: y))
         window?.makeKeyAndOrderFront(nil)

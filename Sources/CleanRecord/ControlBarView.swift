@@ -19,14 +19,14 @@ struct ControlBarView: View {
     var body: some View {
         HStack(spacing: 12) {
             // Microphone Toggle
-            ToggleBtn(isOn: $settings.micEnabled, icon: "mic.slash.fill", activeIcon: "mic.fill", help: "Microphone Audio")
+            ToggleBtn(isOn: $settings.micEnabled, icon: "mic.slash.fill", activeIcon: "mic.fill", help: "control.microphone_audio".localized)
             
             // Camera Toggle
             Toggle(isOn: $settings.cameraEnabled) {
                 Image(systemName: settings.cameraEnabled ? "video.fill" : "video.slash.fill")
             }
             .toggleStyle(.button)
-            .help("Camera Overlay")
+            .help("control.camera_overlay".localized)
             .onChange(of: settings.cameraEnabled) { enabled in
                 if enabled {
                     CameraOverlayManager.shared.showCamera()
@@ -40,16 +40,16 @@ struct ControlBarView: View {
                 
                 // Shape Toggle (Menu is fine for this)
                 Menu {
-                    Button("Circle") { settings.cameraShape = "circle" }
-                    Button("Square") { settings.cameraShape = "square" }
-                    Button("Rectangle") { settings.cameraShape = "rectangle" }
+                    Button("shape.circle".localized) { settings.cameraShape = "circle" }
+                    Button("shape.square".localized) { settings.cameraShape = "square" }
+                    Button("shape.rectangle".localized) { settings.cameraShape = "rectangle" }
                 } label: {
                     Image(systemName: shapeIcon(settings.cameraShape))
                         .foregroundColor(.blue)
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 24)
-                .help("Camera Shape")
+                .help("control.camera_shape".localized)
                 
                 // Continuous Scale Control
                 Button(action: { isShowingScale.toggle() }) {
@@ -70,7 +70,7 @@ struct ControlBarView: View {
                     }
                     .padding(12)
                 }
-                .help("Camera Scale")
+                .help("control.camera_scale".localized)
                 
                 // Beauty Slider Popover
                 Button(action: { isShowingBeauty.toggle() }) {
@@ -92,7 +92,7 @@ struct ControlBarView: View {
                     }
                     .padding(12)
                 }
-                .help("Beauty Filter")
+                .help("control.beauty_filter".localized)
             }
             
             Divider()
@@ -106,7 +106,7 @@ struct ControlBarView: View {
                     .foregroundColor(.red)
             }
             .buttonStyle(PlainButtonStyle())
-            .help("Start Recording")
+            .help("control.start_recording".localized)
             
             // Cancel Button
             Button(action: onCancel) {
@@ -116,7 +116,7 @@ struct ControlBarView: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(PlainButtonStyle())
-            .help("Cancel")
+            .help("control.cancel".localized)
             
             Divider().frame(height: 20)
         }

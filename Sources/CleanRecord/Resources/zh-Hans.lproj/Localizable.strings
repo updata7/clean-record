@@ -1,0 +1,50 @@
+/* Menu Items */
+"menu.about" = "关于 CleanRecord";
+"menu.capture_area" = "截取区域";
+"menu.capture_fullscreen" = "截取全屏";
+"menu.record_screen" = "录制区域";
+"menu.record_fullscreen" = "录制全屏";
+"menu.stop_recording" = "停止录制";
+"menu.pause_recording" = "暂停录制";
+"menu.resume_recording" = "继续录制";
+"menu.select_output_folder" = "选择输出文件夹...";
+"menu.language" = "语言";
+"menu.quit" = "退出 CleanRecord";
+
+/* Control Bar */
+"control.microphone_audio" = "麦克风音频";
+"control.camera_overlay" = "摄像头叠加";
+"control.camera_shape" = "摄像头形状";
+"control.camera_scale" = "摄像头缩放";
+"control.beauty_filter" = "美颜滤镜";
+"control.start_recording" = "开始录制";
+"control.cancel" = "取消";
+
+/* Camera Shapes */
+"shape.circle" = "圆形";
+"shape.square" = "正方形";
+"shape.rectangle" = "矩形";
+
+/* About Dialog */
+"about.title" = "CleanRecord";
+"about.version" = "版本 2.1";
+"about.description" = "一款简洁优雅的屏幕录制工具。";
+"about.ok" = "确定";
+
+/* File Panel */
+"panel.select_folder" = "选择文件夹";
+
+/* Languages */
+"language.english" = "English";
+"language.chinese" = "中文";
+"language.system" = "跟随系统";
+
+/* Notifications */
+"notification.recording_started" = "录制已开始";
+"notification.recording_stopped" = "录制已停止";
+"notification.screenshot_saved" = "截图已保存";
+
+/* Errors */
+"error.recording_failed" = "录制失败";
+"error.permission_denied" = "权限被拒绝。请在系统偏好设置中授予屏幕录制权限。";
+"error.file_save_failed" = "文件保存失败";

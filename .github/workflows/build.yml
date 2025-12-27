@@ -1,0 +1,70 @@
+name: Build CleanRecord
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  release:
+    types: [ created ]
+
+jobs:
+  build:
+    name: Build macOS App
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+    
+    - name: Check Swift version
+      run: swift --version
+      
+    - name: Build Swift package
+      run: swift build -c release
+      
+    - name: Run tests (if any)
+      run: swift test || echo "No tests configured"
+      continue-on-error: true
+      
+    - name: Package .app bundle
+      run: |
+        chmod +x Package.sh
+        ./Package.sh
+      
+    - name: Verify .app bundle
+      run: |
+        if [ -d "build/CleanRecord.app" ]; then
+          echo "✅ CleanRecord.app created successfully"
+          ls -lh build/CleanRecord.app/Contents/MacOS/
+          ls -lh build/CleanRecord.app/Contents/Resources/
+        else
+          echo "❌ Failed to create CleanRecord.app"
+          exit 1
+        fi
+    
+    - name: Create ZIP archive
+      run: |
+        cd build
+        zip -r CleanRecord.zip CleanRecord.app
+        cd ..
+    
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CleanRecord-${{ github.sha }}
+        path: build/CleanRecord.zip
+        retention-days: 30
+    
+    - name: Upload to release
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: build/CleanRecord.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,18 +11,37 @@ class StatusBarController: NSObject {
         
         super.init()
         setupMenu()
+        
+        // Listen for language changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(refreshMenu),
+            name: .languageDidChange,
+            object: nil
+        )
     }
     
     deinit {
+        NotificationCenter.default.removeObserver(self)
         print("StatusBarController: Deinitializing! This is likely why the icon disappears.")
+    }
+    
+    @objc private func refreshMenu() {
+        print("StatusBarController: refreshMenu() called")
+        // Ensure we're on the main thread for UI updates
+        Task { @MainActor in
+            print("StatusBarController: Clearing menu items")
+            // Clear existing menu
+            menu.removeAllItems()
+            
+            print("StatusBarController: Rebuilding menu with new localized strings")
+            // Rebuild menu with new localized strings
+            setupMenuItems()
+            print("StatusBarController: Menu refresh complete")
+        }
     }
 
     private func setupMenu() {
-        let aboutItem = NSMenuItem(title: "About CleanRecord", action: #selector(showAbout), keyEquivalent: "")
-        aboutItem.target = self
-        menu.addItem(aboutItem)
-        menu.addItem(NSMenuItem.separator())
-        
         if let button = statusItem.button {
             // Use custom Nano Banana logo from Resources
             let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
@@ -37,41 +56,71 @@ class StatusBarController: NSObject {
             button.action = #selector(menuWillOpen)
         }
         
+        setupMenuItems()
+        statusItem.menu = menu
+    }
+    
+    private func setupMenuItems() {
+        let aboutItem = NSMenuItem(title: "menu.about".localized, action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+        menu.addItem(NSMenuItem.separator())
+        
         // Construct the menu
-        let captureAreaItem = NSMenuItem(title: "Capture Area", action: #selector(captureArea), keyEquivalent: "a")
+        let captureAreaItem = NSMenuItem(title: "menu.capture_area".localized, action: #selector(captureArea), keyEquivalent: "a")
         captureAreaItem.target = self
         menu.addItem(captureAreaItem)
         
-        let captureFullscreenItem = NSMenuItem(title: "Capture Fullscreen", action: #selector(captureFullscreen), keyEquivalent: "f")
+        let captureFullscreenItem = NSMenuItem(title: "menu.capture_fullscreen".localized, action: #selector(captureFullscreen), keyEquivalent: "f")
         captureFullscreenItem.target = self
         menu.addItem(captureFullscreenItem)
         
         menu.addItem(NSMenuItem.separator())
         
-        let recordScreenItem = NSMenuItem(title: "Record Screen", action: #selector(recordScreen), keyEquivalent: "r")
-        recordScreenItem.target = self
-        menu.addItem(recordScreenItem)
+        let recordAreaItem = NSMenuItem(title: "menu.record_screen".localized, action: #selector(recordScreen), keyEquivalent: "r")
+        recordAreaItem.target = self
+        menu.addItem(recordAreaItem)
+        
+        let recordFullscreenItem = NSMenuItem(title: "menu.record_fullscreen".localized, action: #selector(recordFullscreen), keyEquivalent: "R")
+        recordFullscreenItem.target = self
+        menu.addItem(recordFullscreenItem)
         
         // Pause/Resume items
-        let pauseItem = NSMenuItem(title: "Pause Recording", action: #selector(pauseRecording), keyEquivalent: "p")
+        let pauseItem = NSMenuItem(title: "menu.pause_recording".localized, action: #selector(pauseRecording), keyEquivalent: "p")
         pauseItem.target = self
         pauseItem.isHidden = true
         menu.addItem(pauseItem)
         
-        let resumeItem = NSMenuItem(title: "Resume Recording", action: #selector(resumeRecording), keyEquivalent: "")
+        let resumeItem = NSMenuItem(title: "menu.resume_recording".localized, action: #selector(resumeRecording), keyEquivalent: "")
         resumeItem.target = self
         resumeItem.isHidden = true
         menu.addItem(resumeItem)
         
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Select Output Folder...", action: #selector(selectOutputDirectory), keyEquivalent: "o")
+        
+        // Language submenu
+        let languageMenu = NSMenu()
+        let systemLangItem = NSMenuItem(title: "language.system".localized, action: #selector(setSystemLanguage), keyEquivalent: "")
+        systemLangItem.target = self
+        languageMenu.addItem(systemLangItem)
+        languageMenu.addItem(NSMenuItem.separator())
+        let englishItem = NSMenuItem(title: "language.english".localized, action: #selector(setEnglish), keyEquivalent: "")
+        englishItem.target = self
+        languageMenu.addItem(englishItem)
+        let chineseItem = NSMenuItem(title: "language.chinese".localized, action: #selector(setChinese), keyEquivalent: "")
+        chineseItem.target = self
+        languageMenu.addItem(chineseItem)
+        
+        let languageMenuItem = NSMenuItem(title: "menu.language".localized, action: nil, keyEquivalent: "")
+        languageMenuItem.submenu = languageMenu
+        menu.addItem(languageMenuItem)
+        
+        menu.addItem(withTitle: "menu.select_output_folder".localized, action: #selector(selectOutputDirectory), keyEquivalent: "o")
         menu.addItem(NSMenuItem.separator())
         
-        let quitItem = NSMenuItem(title: "Quit CleanRecord", action: #selector(quitApp), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "menu.quit".localized, action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
-        
-        statusItem.menu = menu
     }
     
     @objc func menuWillOpen() {
@@ -105,8 +154,8 @@ class StatusBarController: NSObject {
         Task { @MainActor in
             if #available(macOS 12.3, *) {
                 let rManager = RecorderManager.shared
-                if let item = sItem.menu?.item(withTitle: "Record Screen") ?? sItem.menu?.item(withTitle: "Stop Recording") {
-                    if item.title == "Record Screen" {
+                if let item = sItem.menu?.item(withTitle: "menu.record_screen".localized) ?? sItem.menu?.item(withTitle: "menu.stop_recording".localized) {
+                    if item.title == "menu.record_screen".localized {
                         SelectionWindowManager.shared.startSelection { rect in
                             Task { @MainActor in
                                 stManager.lastRecordingRect = rect
@@ -160,7 +209,7 @@ class StatusBarController: NSObject {
                         CameraSessionManager.shared.stop() // Kill hardware light
                         
                         print("StatusBarController: Resetting icon image and title.")
-                        item.title = "Record Screen"
+                        item.title = "menu.record_screen".localized
                         
                         let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
                         if let image = NSImage(contentsOfFile: iconPath) {
@@ -173,8 +222,8 @@ class StatusBarController: NSObject {
                         sItem.button?.title = ""
                         
                         // Hide Pause/Resume
-                        sItem.menu?.item(withTitle: "Pause Recording")?.isHidden = true
-                        sItem.menu?.item(withTitle: "Resume Recording")?.isHidden = true
+                        sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = true
+                        sItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = true
                         
                         if let url = await rManager.stopRecording() {
                             print("StatusBarController: Recording stopped successfully at \(url.path)")
@@ -199,24 +248,124 @@ class StatusBarController: NSObject {
         }
     }
     
+    @objc func recordFullscreen() {
+        let sItem = statusItem
+        let stManager = SettingsManager.shared
+        
+        Task { @MainActor in
+            if #available(macOS 12.3, *) {
+                let rManager = RecorderManager.shared
+                if let item = sItem.menu?.item(withTitle: "menu.record_fullscreen".localized) ?? sItem.menu?.item(withTitle: "menu.stop_recording".localized) {
+                    if item.title == "menu.record_fullscreen".localized {
+                        // Get main screen bounds
+                        guard let screen = NSScreen.main else { return }
+                        let rect = screen.frame
+                        
+                        stManager.lastRecordingRect = rect
+                        RecordingBorderManager.shared.showBorder(for: rect)
+                        
+                        let bottomPoint = CGPoint(x: rect.minX, y: rect.minY)
+                        
+                        ControlBarWindowManager.shared.showControlBar(
+                            at: bottomPoint,
+                            width: rect.width,
+                            onStart: {
+                                Task { @MainActor in
+                                    ControlBarWindowManager.shared.closeWindow()
+                                    
+                                    let captureMic = stManager.micEnabled
+                                    rManager.startRecording(rect: rect, captureAudio: captureMic) { result in
+                                        switch result {
+                                        case .success:
+                                            Task { @MainActor in
+                                                item.title = "menu.stop_recording".localized
+                                                sItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
+                                                
+                                                // Show Pause
+                                                sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = false
+                                            }
+                                        case .failure(let error):
+                                            print("Error: \(error)")
+                                            Task { @MainActor in
+                                                RecordingBorderManager.shared.hideBorder()
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            onCancel: {
+                                Task { @MainActor in
+                                    RecordingBorderManager.shared.hideBorder()
+                                    CameraOverlayManager.shared.hideCamera()
+                                    CameraSessionManager.shared.stop()
+                                    stManager.cameraEnabled = false
+                                }
+                            }
+                        )
+                    } else {
+                        // Stop recording (same as recordScreen)
+                        print("StatusBarController: Stop recording clicked.")
+                        RecordingBorderManager.shared.hideBorder()
+                        CameraOverlayManager.shared.hideCamera()
+                        CameraSessionManager.shared.stop()
+                        
+                        print("StatusBarController: Resetting icon image and title.")
+                        item.title = "menu.record_fullscreen".localized
+                        
+                        let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
+                        if let image = NSImage(contentsOfFile: iconPath) {
+                            image.size = NSSize(width: 18, height: 18)
+                            image.isTemplate = true
+                            sItem.button?.image = image
+                        } else {
+                            sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
+                        }
+                        sItem.button?.title = ""
+                        
+                        // Hide Pause/Resume
+                        sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = true
+                        sItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = true
+                        
+                        if let url = await rManager.stopRecording() {
+                            print("StatusBarController: Recording stopped successfully at \(url.path)")
+                            
+                            let attr = try? FileManager.default.attributesOfItem(atPath: url.path)
+                            let fileSize = attr?[.size] as? UInt64 ?? 0
+                            
+                            if fileSize > 0 {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            } else {
+                                print("StatusBarController Error: Recording produced 0 bytes file.")
+                                try? FileManager.default.removeItem(at: url)
+                            }
+                        } else {
+                            print("StatusBarController Error: RecorderManager returned nil URL.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    
     @objc func pauseRecording() {
         RecorderManager.shared.pauseRecording()
-        statusItem.menu?.item(withTitle: "Pause Recording")?.isHidden = true
-        statusItem.menu?.item(withTitle: "Resume Recording")?.isHidden = false
+        statusItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = true
+        statusItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = false
         statusItem.button?.image = NSImage(systemSymbolName: "pause.circle", accessibilityDescription: "Paused")
     }
     
     @objc func resumeRecording() {
         RecorderManager.shared.resumeRecording()
-        statusItem.menu?.item(withTitle: "Pause Recording")?.isHidden = false
-        statusItem.menu?.item(withTitle: "Resume Recording")?.isHidden = true
+        statusItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = false
+        statusItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = true
         statusItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
     }
     
     @objc func showAbout() {
         let alert = NSAlert()
-        alert.messageText = "CleanRecord"
-        alert.informativeText = "Version 2.1\nA sleek screen recorder with Nano Banana energy."
+        alert.messageText = "about.title".localized
+        alert.informativeText = "\("about.version".localized)\n\("about.description".localized)"
         
         if let logoPath = Bundle.main.path(forResource: "AppIcon", ofType: "png"),
            let image = NSImage(contentsOfFile: logoPath) {
@@ -229,8 +378,26 @@ class StatusBarController: NSObject {
             }
         }
         
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "about.ok".localized)
         alert.runModal()
+    }
+    
+    @objc func setSystemLanguage() {
+        print("StatusBarController: setSystemLanguage() called")
+        LocalizationManager.shared.resetToSystemLanguage()
+        // Menu will refresh automatically via NotificationCenter
+    }
+    
+    @objc func setEnglish() {
+        print("StatusBarController: setEnglish() called")
+        LocalizationManager.shared.currentLanguage = "en"
+        // Menu will refresh automatically via NotificationCenter
+    }
+    
+    @objc func setChinese() {
+        print("StatusBarController: setChinese() called")
+        LocalizationManager.shared.currentLanguage = "zh-hans"
+        // Menu will refresh automatically via NotificationCenter
     }
     
     @objc func selectOutputDirectory() {
@@ -238,7 +405,7 @@ class StatusBarController: NSObject {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
-        panel.prompt = "Select Folder"
+        panel.prompt = "panel.select_folder".localized
         
         panel.begin { response in
             if response == .OK, let url = panel.url {
