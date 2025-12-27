@@ -1,62 +1,97 @@
-name: Build & Release CleanRecord
+name: Build CleanRecord (Universal macOS App)
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
+  release:
+    types: [ created ]
   workflow_dispatch:
 
 permissions:
-  contents: write   # 必须，否则不能创建 release
+  contents: write   # 用于 release 上传文件（不需要自建 token）
 
 jobs:
   build:
-    name: Build macOS App
+    name: Build Universal macOS App
     runs-on: macos-latest
     timeout-minutes: 60
 
+    env:
+      APP_NAME: CleanRecord
+      MACOSX_DEPLOYMENT_TARGET: "11.0"   # 👈 非常关键，避免系统版本不兼容
+
     steps:
+      # 1️⃣ 拉代码
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2️⃣ Xcode
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: latest-stable
 
-      - name: Check Swift version
-        run: swift --version
+      - name: Show build environment
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
 
-      - name: Build Swift package
-        run: swift build -c release
+      # 3️⃣ 编译（Universal）
+      - name: Build Universal Binary
+        run: |
+          set -e
+          xcodebuild \
+            -scheme ${APP_NAME} \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            ARCHS="arm64 x86_64" \
+            ONLY_ACTIVE_ARCH=NO \
+            MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} \
+            build
 
-      - name: Run tests
-        run: swift test || echo "No tests"
-        continue-on-error: true
-
+      # 4️⃣ 打包 .app（你已有 Package.sh）
       - name: Package .app bundle
         run: |
           chmod +x Package.sh
           ./Package.sh
 
-      - name: Verify .app bundle
+      # 5️⃣ 校验产物（非常重要）
+      - name: Verify App
         run: |
-          test -d build/CleanRecord.app
+          APP="build/${APP_NAME}.app"
+          if [ ! -d "$APP" ]; then
+            echo "❌ ${APP_NAME}.app not found"
+            exit 1
+          fi
 
-      - name: Create ZIP archive
+          echo "✅ App exists"
+          echo "📦 Binary info:"
+          file "$APP/Contents/MacOS/${APP_NAME}"
+
+          echo "📦 Min macOS version:"
+          otool -l "$APP/Contents/MacOS/${APP_NAME}" | grep -A2 LC_BUILD_VERSION || true
+
+      # 6️⃣ 打 zip（供下载）
+      - name: Create ZIP
         run: |
           cd build
-          zip -r CleanRecord.zip CleanRecord.app
+          zip -r ${APP_NAME}-macOS-universal.zip ${APP_NAME}.app
+          cd ..
 
-      # 🔥 自动创建 Release（关键）
-      - name: Create GitHub Release
-        id: release
+      # 7️⃣ 上传 Actions Artifact（push 就有）
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${APP_NAME}-macOS-universal
+          path: build/${APP_NAME}-macOS-universal.zip
+          retention-days: 30
+
+      # 8️⃣ 发布到 Release（只有 release 事件才走）
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ github.run_number }}
-          name: CleanRecord v${{ github.run_number }}
-          body: |
-            Auto build from commit ${{ github.sha }}
-          files: build/CleanRecord.zip
+          files: build/${APP_NAME}-macOS-universal.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
