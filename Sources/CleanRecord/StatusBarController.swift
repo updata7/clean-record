@@ -1,9 +1,12 @@
 import AppKit
 import SwiftUI
+import Combine
+import Carbon
 
 class StatusBarController: NSObject {
     private var statusItem: NSStatusItem
     private var menu: NSMenu
+    private var cancellables = Set<AnyCancellable>()
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -11,6 +14,7 @@ class StatusBarController: NSObject {
         
         super.init()
         setupMenu()
+        setupDurationObservation()
         
         // Listen for language changes
         NotificationCenter.default.addObserver(
@@ -31,11 +35,7 @@ class StatusBarController: NSObject {
         // Ensure we're on the main thread for UI updates
         Task { @MainActor in
             print("StatusBarController: Clearing menu items")
-            // Clear existing menu
-            menu.removeAllItems()
-            
             print("StatusBarController: Rebuilding menu with new localized strings")
-            // Rebuild menu with new localized strings
             setupMenuItems()
             print("StatusBarController: Menu refresh complete")
         }
@@ -43,9 +43,8 @@ class StatusBarController: NSObject {
 
     private func setupMenu() {
         if let button = statusItem.button {
-            // Use custom Nano Banana logo from Resources
-            let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
-            if let image = NSImage(contentsOfFile: iconPath) {
+            // Use custom logo from Resources
+            if let image = Bundle.module.image(forResource: "AppIcon") {
                 image.size = NSSize(width: 18, height: 18)
                 image.isTemplate = true // Allows it to change color in Dark Mode
                 button.image = image
@@ -57,10 +56,13 @@ class StatusBarController: NSObject {
         }
         
         setupMenuItems()
+        setupGlobalHotKeys()
         statusItem.menu = menu
     }
     
     private func setupMenuItems() {
+        menu.removeAllItems()
+        
         let aboutItem = NSMenuItem(title: "menu.about".localized, action: #selector(showAbout), keyEquivalent: "")
         aboutItem.target = self
         menu.addItem(aboutItem)
@@ -77,21 +79,25 @@ class StatusBarController: NSObject {
         
         menu.addItem(NSMenuItem.separator())
         
-        let recordAreaItem = NSMenuItem(title: "menu.record_screen".localized, action: #selector(recordScreen), keyEquivalent: "r")
+        let recordAreaItem = NSMenuItem(title: "menu.record_screen".localized, action: #selector(recordScreen), keyEquivalent: "2")
+        recordAreaItem.keyEquivalentModifierMask = [.option, .shift]
         recordAreaItem.target = self
         menu.addItem(recordAreaItem)
         
-        let recordFullscreenItem = NSMenuItem(title: "menu.record_fullscreen".localized, action: #selector(recordFullscreen), keyEquivalent: "R")
+        let recordFullscreenItem = NSMenuItem(title: "menu.record_fullscreen".localized, action: #selector(recordFullscreen), keyEquivalent: "1")
+        recordFullscreenItem.keyEquivalentModifierMask = [.option, .shift]
         recordFullscreenItem.target = self
         menu.addItem(recordFullscreenItem)
         
         // Pause/Resume items
         let pauseItem = NSMenuItem(title: "menu.pause_recording".localized, action: #selector(pauseRecording), keyEquivalent: "p")
+        pauseItem.keyEquivalentModifierMask = [.option, .shift]
         pauseItem.target = self
         pauseItem.isHidden = true
         menu.addItem(pauseItem)
         
-        let resumeItem = NSMenuItem(title: "menu.resume_recording".localized, action: #selector(resumeRecording), keyEquivalent: "")
+        let resumeItem = NSMenuItem(title: "menu.resume_recording".localized, action: #selector(resumeRecording), keyEquivalent: "p")
+        resumeItem.keyEquivalentModifierMask = [.option, .shift]
         resumeItem.target = self
         resumeItem.isHidden = true
         menu.addItem(resumeItem)
@@ -121,6 +127,54 @@ class StatusBarController: NSObject {
         let quitItem = NSMenuItem(title: "menu.quit".localized, action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+    }
+    
+    private func setupGlobalHotKeys() {
+        let hotKeyManager = GlobalHotKeyManager.shared
+        
+        // Modifiers: Shift (0x0200) + Option (0x0800) = 0x0A00
+        let modifiers: UInt32 = UInt32(shiftKey | optionKey)
+        
+        // 1. Record Area: Opt + Shift + 2 (Key code 19)
+        hotKeyManager.register(keyCode: 19, modifiers: modifiers, identifier: 1) { [weak self] in
+            print("GlobalHotKey: Record Area triggered")
+            self?.recordScreen()
+        }
+        
+        // 2. Record Fullscreen: Opt + Shift + 1 (Key code 18)
+        hotKeyManager.register(keyCode: 18, modifiers: modifiers, identifier: 2) { [weak self] in
+            print("GlobalHotKey: Record Fullscreen triggered")
+            self?.recordFullscreen()
+        }
+        
+        // 3. Stop: Opt + Shift + S (Key code 1)
+        hotKeyManager.register(keyCode: 1, modifiers: modifiers, identifier: 4) { [weak self] in
+            print("GlobalHotKey: Stop triggered")
+            Task { @MainActor in
+                await self?.stopActiveRecording()
+            }
+        }
+        
+        // 4. Pause/Resume: Opt + Shift + P (Key code 35)
+        hotKeyManager.register(keyCode: 35, modifiers: modifiers, identifier: 3) { [weak self] in
+            print("GlobalHotKey: Pause/Resume triggered")
+            if RecorderManager.shared.isRecording {
+                if RecorderManager.shared.isPaused {
+                    self?.resumeRecording()
+                } else {
+                    self?.pauseRecording()
+                }
+            }
+        }
+        
+        // Update menu tooltips to show global shortcuts
+        menu.item(withTitle: "menu.record_screen".localized)?.toolTip = "⌥⇧2"
+        menu.item(withTitle: "menu.record_fullscreen".localized)?.toolTip = "⌥⇧1"
+        menu.item(withTitle: "menu.pause_recording".localized)?.toolTip = "⌥⇧P"
+        
+        // Also add a dedicated (hidden) stop item if needed, but since we toggle titles, 
+        // we can just update the stop shortcut in the stopActiveRecording reset logic or here.
+        // For now, these cover the start actions.
     }
     
     @objc func menuWillOpen() {
@@ -154,93 +208,69 @@ class StatusBarController: NSObject {
         Task { @MainActor in
             if #available(macOS 12.3, *) {
                 let rManager = RecorderManager.shared
-                if let item = sItem.menu?.item(withTitle: "menu.record_screen".localized) ?? sItem.menu?.item(withTitle: "menu.stop_recording".localized) {
-                    if item.title == "menu.record_screen".localized {
-                        SelectionWindowManager.shared.startSelection { rect in
-                            Task { @MainActor in
-                                stManager.lastRecordingRect = rect
-                                RecordingBorderManager.shared.showBorder(for: rect)
-                                
-                                let bottomPoint = CGPoint(x: rect.minX, y: rect.minY)
-                                
-                                ControlBarWindowManager.shared.showControlBar(
-                                    at: bottomPoint,
-                                    width: rect.width,
-                                    onStart: {
-                                        Task { @MainActor in
-                                            ControlBarWindowManager.shared.closeWindow()
-                                            
-                                            let captureMic = stManager.micEnabled
-                                            rManager.startRecording(rect: rect, captureAudio: captureMic) { result in
-                                                switch result {
-                                                case .success:
-                                                    Task { @MainActor in
-                                                        item.title = "Stop Recording"
-                                                        sItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
-                                                        
-                                                        // Show Pause
-                                                        sItem.menu?.item(withTitle: "Pause Recording")?.isHidden = false
+                
+                // Unified check: If recording, stop it regardless of how it started
+                if rManager.isRecording {
+                    await self.stopActiveRecording()
+                    return
+                }
+                
+                if let item = sItem.menu?.item(withTitle: "menu.record_screen".localized) {
+                    SelectionWindowManager.shared.startSelection { rect in
+                        Task { @MainActor in
+                            stManager.lastRecordingRect = rect
+                            RecordingBorderManager.shared.showBorder(for: rect)
+                            
+                            let bottomPoint = CGPoint(x: rect.minX, y: rect.minY)
+                            
+                            ControlBarWindowManager.shared.showControlBar(
+                                at: bottomPoint,
+                                width: rect.width,
+                                onStart: {
+                                    Task { @MainActor in
+                                        let captureMic = stManager.micEnabled
+                                        rManager.startRecording(rect: rect, captureAudio: captureMic) { result in
+                                            switch result {
+                                            case .success:
+                                                Task { @MainActor in
+                                                    item.title = "menu.stop_recording".localized
+                                                    item.keyEquivalent = "s"
+                                                    item.keyEquivalentModifierMask = [.option, .shift]
+                                                    if let recordImg = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Recording") {
+                                                        sItem.button?.image = recordImg
+                                                        sItem.button?.contentTintColor = .red
+                                                    } else if let image = Bundle.module.image(forResource: "AppIcon") {
+                                                        image.size = NSSize(width: 18, height: 18)
+                                                        image.isTemplate = true
+                                                        sItem.button?.image = image
                                                     }
-                                                case .failure(let error):
-                                                    print("Error: \(error)")
-                                                    Task { @MainActor in
-                                                        RecordingBorderManager.shared.hideBorder()
-                                                    }
+                                                    
+                                                    // Show Pause
+                                                    sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = false
+                                                }
+                                            case .failure(let error):
+                                                print("Error: \(error)")
+                                                Task { @MainActor in
+                                                    RecordingBorderManager.shared.hideBorder()
                                                 }
                                             }
                                         }
-                                    },
-                                    onCancel: {
-                                        Task { @MainActor in
-                                            RecordingBorderManager.shared.hideBorder()
-                                            CameraOverlayManager.shared.hideCamera()
-                                            CameraSessionManager.shared.stop()
-                                            stManager.cameraEnabled = false
-                                        }
                                     }
-                                )
-                            }
-                        }
-                    } else {
-                        // Stop
-                        print("StatusBarController: Stop recording clicked.")
-                        RecordingBorderManager.shared.hideBorder()
-                        CameraOverlayManager.shared.hideCamera()
-                        CameraSessionManager.shared.stop() // Kill hardware light
-                        
-                        print("StatusBarController: Resetting icon image and title.")
-                        item.title = "menu.record_screen".localized
-                        
-                        let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
-                        if let image = NSImage(contentsOfFile: iconPath) {
-                            image.size = NSSize(width: 18, height: 18)
-                            image.isTemplate = true
-                            sItem.button?.image = image
-                        } else {
-                            sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
-                        }
-                        sItem.button?.title = ""
-                        
-                        // Hide Pause/Resume
-                        sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = true
-                        sItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = true
-                        
-                        if let url = await rManager.stopRecording() {
-                            print("StatusBarController: Recording stopped successfully at \(url.path)")
-                            
-                            // Check for 0 bytes file
-                            let attr = try? FileManager.default.attributesOfItem(atPath: url.path)
-                            let fileSize = attr?[.size] as? UInt64 ?? 0
-                            
-                            if fileSize > 0 {
-                                // v2.2 refinement: Reveal in Finder instead of showing overlay
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
-                            } else {
-                                print("StatusBarController Error: Recording produced 0 bytes file.")
-                                try? FileManager.default.removeItem(at: url)
-                            }
-                        } else {
-                            print("StatusBarController Error: RecorderManager returned nil URL.")
+                                },
+                                onStop: {
+                                    Task { @MainActor in
+                                        await self.stopActiveRecording()
+                                    }
+                                },
+                                onCancel: {
+                                    Task { @MainActor in
+                                        RecordingBorderManager.shared.hideBorder()
+                                        CameraOverlayManager.shared.hideCamera()
+                                        CameraSessionManager.shared.stop()
+                                        stManager.cameraEnabled = false
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -255,8 +285,13 @@ class StatusBarController: NSObject {
         Task { @MainActor in
             if #available(macOS 12.3, *) {
                 let rManager = RecorderManager.shared
-                if let item = sItem.menu?.item(withTitle: "menu.record_fullscreen".localized) ?? sItem.menu?.item(withTitle: "menu.stop_recording".localized) {
-                    if item.title == "menu.record_fullscreen".localized {
+                
+                if rManager.isRecording {
+                    await self.stopActiveRecording()
+                    return
+                }
+                
+                if let item = sItem.menu?.item(withTitle: "menu.record_fullscreen".localized) {
                         // Get main screen bounds
                         guard let screen = NSScreen.main else { return }
                         let rect = screen.frame
@@ -271,7 +306,7 @@ class StatusBarController: NSObject {
                             width: rect.width,
                             onStart: {
                                 Task { @MainActor in
-                                    ControlBarWindowManager.shared.closeWindow()
+                                    // ControlBarWindowManager.shared.closeWindow()
                                     
                                     let captureMic = stManager.micEnabled
                                     rManager.startRecording(rect: rect, captureAudio: captureMic) { result in
@@ -279,7 +314,17 @@ class StatusBarController: NSObject {
                                         case .success:
                                             Task { @MainActor in
                                                 item.title = "menu.stop_recording".localized
-                                                sItem.button?.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Recording")
+                                                item.keyEquivalent = "s"
+                                                item.keyEquivalentModifierMask = [.option, .shift]
+                                                
+                                                if let recordImg = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: "Recording") {
+                                                    sItem.button?.image = recordImg
+                                                    sItem.button?.contentTintColor = .red
+                                                } else if let image = Bundle.module.image(forResource: "AppIcon") {
+                                                    image.size = NSSize(width: 18, height: 18)
+                                                    image.isTemplate = true
+                                                    sItem.button?.image = image
+                                                }
                                                 
                                                 // Show Pause
                                                 sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = false
@@ -293,6 +338,11 @@ class StatusBarController: NSObject {
                                     }
                                 }
                             },
+                            onStop: {
+                                Task { @MainActor in
+                                    await self.stopActiveRecording()
+                                }
+                            },
                             onCancel: {
                                 Task { @MainActor in
                                     RecordingBorderManager.shared.hideBorder()
@@ -302,47 +352,50 @@ class StatusBarController: NSObject {
                                 }
                             }
                         )
-                    } else {
-                        // Stop recording (same as recordScreen)
-                        print("StatusBarController: Stop recording clicked.")
-                        RecordingBorderManager.shared.hideBorder()
-                        CameraOverlayManager.shared.hideCamera()
-                        CameraSessionManager.shared.stop()
-                        
-                        print("StatusBarController: Resetting icon image and title.")
-                        item.title = "menu.record_fullscreen".localized
-                        
-                        let iconPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
-                        if let image = NSImage(contentsOfFile: iconPath) {
-                            image.size = NSSize(width: 18, height: 18)
-                            image.isTemplate = true
-                            sItem.button?.image = image
-                        } else {
-                            sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
-                        }
-                        sItem.button?.title = ""
-                        
-                        // Hide Pause/Resume
-                        sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = true
-                        sItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = true
-                        
-                        if let url = await rManager.stopRecording() {
-                            print("StatusBarController: Recording stopped successfully at \(url.path)")
-                            
-                            let attr = try? FileManager.default.attributesOfItem(atPath: url.path)
-                            let fileSize = attr?[.size] as? UInt64 ?? 0
-                            
-                            if fileSize > 0 {
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
-                            } else {
-                                print("StatusBarController Error: Recording produced 0 bytes file.")
-                                try? FileManager.default.removeItem(at: url)
-                            }
-                        } else {
-                            print("StatusBarController Error: RecorderManager returned nil URL.")
-                        }
                     }
                 }
+            }
+        }
+
+    @MainActor
+    func stopActiveRecording() async {
+        let rManager = RecorderManager.shared
+        guard rManager.isRecording else { return }
+        
+        print("StatusBarController: stopActiveRecording() called.")
+        await RecordingBorderManager.shared.hideBorder()
+        await CameraOverlayManager.shared.hideCamera()
+        await CameraSessionManager.shared.stop()
+        
+        // Reset menu items
+        let sItem = statusItem
+        // Reset to defaults by recreating the menu or manually setting titles
+        setupMenuItems()
+        
+        if let image = Bundle.module.image(forResource: "AppIcon") {
+            image.size = NSSize(width: 18, height: 18)
+            image.isTemplate = true
+            sItem.button?.image = image
+        } else {
+            sItem.button?.image = NSImage(systemSymbolName: "aperture", accessibilityDescription: "Record Screen")
+        }
+        sItem.button?.title = ""
+        sItem.button?.contentTintColor = nil
+        await ControlBarWindowManager.shared.closeWindow()
+        
+        // Hide Pause/Resume
+        sItem.menu?.item(withTitle: "menu.pause_recording".localized)?.isHidden = true
+        sItem.menu?.item(withTitle: "menu.resume_recording".localized)?.isHidden = true
+        
+        if let url = await rManager.stopRecording() {
+            print("StatusBarController: Recording stopped successfully at \(url.path)")
+            let attr = try? FileManager.default.attributesOfItem(atPath: url.path)
+            let fileSize = attr?[.size] as? UInt64 ?? 0
+            if fileSize > 0 {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } else {
+                print("StatusBarController Error: Recording produced 0 bytes file.")
+                try? FileManager.default.removeItem(at: url)
             }
         }
     }
@@ -367,15 +420,8 @@ class StatusBarController: NSObject {
         alert.messageText = "about.title".localized
         alert.informativeText = "\("about.version".localized)\n\("about.description".localized)"
         
-        if let logoPath = Bundle.main.path(forResource: "AppIcon", ofType: "png"),
-           let image = NSImage(contentsOfFile: logoPath) {
+        if let image = Bundle.module.image(forResource: "AppIcon") {
             alert.icon = image
-        } else {
-            // Fallback to absolute path if bundle fails (common in standalone scripts/debug builds)
-            let fallbackPath = "/Users/chenk/Documents/code/AI/clean-record/CleanRecord/Sources/CleanRecord/Resources/AppIcon.png"
-            if let image = NSImage(contentsOfFile: fallbackPath) {
-                alert.icon = image
-            }
         }
         
         alert.addButton(withTitle: "about.ok".localized)
@@ -429,5 +475,38 @@ class StatusBarController: NSObject {
         Task { @MainActor in
             OverlayWindowManager.shared.showOverlay(with: image)
         }
+    }
+    
+    // MARK: - Duration Observation
+    private func setupDurationObservation() {
+        RecorderManager.shared.$duration
+            .receive(on: RunLoop.main)
+            .sink { [weak self] duration in
+                guard let self = self else { return }
+                let state = RecorderManager.shared.recordingState
+                if case .recording = state {
+                    let mins = Int(duration) / 60
+                    let secs = Int(duration) % 60
+                    let title = String(format: " %02d:%02d", mins, secs)
+                    self.statusItem.button?.title = title
+                    if Int(duration) % 5 == 0 {
+                        print("StatusBarController: Updated menu bar duration: \(title)")
+                    }
+                } else {
+                    self.statusItem.button?.title = ""
+                }
+            }
+            .store(in: &cancellables)
+            
+        RecorderManager.shared.$recordingState
+            .receive(on: RunLoop.main)
+            .sink { [weak self] state in
+                guard let self = self else { return }
+                print("StatusBarController: Recording state changed to \(state)")
+                if case .idle = state {
+                    self.statusItem.button?.title = ""
+                }
+            }
+            .store(in: &cancellables)
     }
 }

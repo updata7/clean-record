@@ -7,13 +7,22 @@ class SelectionWindowManager: NSObject {
     
     private var window: NSWindow?
     private var onCapture: ((CGRect) -> Void)?
+    private var eventMonitor: Any?
     
     func startSelection(completion: @escaping (CGRect) -> Void) {
         self.onCapture = completion
         
+        // Listen for ESC key to cancel
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // ESC key
+                print("SelectionWindowManager: ESC pressed, cancelling selection.")
+                self?.closeWindow()
+                return nil // Swallow the event
+            }
+            return event
+        }
+        
         // Create a window that covers the entire screen
-        // In a multi-screen setup, we should cover the screen with the mouse or all screens.
-        // For MVP, Main Screen.
         guard let screen = NSScreen.main else { return }
         
         let newWindow = NSWindow(
@@ -41,11 +50,16 @@ class SelectionWindowManager: NSObject {
                 
                 print("SelectionWindowManager: Converted SwiftUI \(rect) to Cocoa \(cocoaRect) (screenHeight: \(screenHeight))")
                 
-                self?.closeWindow()
-                self?.onCapture?(cocoaRect)
+                // Give AppKit a moment to finish current event processing before transitioning
+                DispatchQueue.main.async {
+                    self?.closeWindow()
+                    self?.onCapture?(cocoaRect)
+                }
             },
             onCancel: { [weak self] in
-                self?.closeWindow()
+                DispatchQueue.main.async {
+                    self?.closeWindow()
+                }
             }
         )
         
@@ -58,6 +72,10 @@ class SelectionWindowManager: NSObject {
     }
     
     private func closeWindow() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
         window?.close()
         window = nil
     }

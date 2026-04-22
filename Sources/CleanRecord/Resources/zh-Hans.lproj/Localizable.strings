@@ -19,6 +19,11 @@
 "control.beauty_filter" = "美颜滤镜";
 "control.start_recording" = "开始录制";
 "control.cancel" = "取消";
+"camera.shape" = "形状";
+"camera.size" = "大小";
+"camera.beauty" = "美颜";
+"selection.confirm" = "确认选区";
+"selection.free" = "自由比例";
 
 /* Camera Shapes */
 "shape.circle" = "圆形";

@@ -5,37 +5,83 @@ struct SelectionOverlayView: View {
     var onCancel: () -> Void
     
     @ObservedObject var settings = SettingsManager.shared
-    @State private var startPoint: CGPoint?
-    @State private var currentPoint: CGPoint?
+    @State private var selectionRect: CGRect?
+    @State private var startingRect: CGRect?
+    @State private var dragMode: DragMode = .none
+    
+    enum DragMode: Equatable {
+        case none, create, move, resize(edge: Edge)
+    }
+    
+    enum Edge: Equatable {
+        case topLeft, topRight, bottomLeft, bottomRight
+    }
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Dimmed background
-                Color.black.opacity(0.3)
+                Color.black.opacity(0.4)
                     .edgesIgnoringSafeArea(.all)
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
-                                if startPoint == nil {
-                                    startPoint = value.startLocation
+                                if selectionRect == nil {
+                                    // Initial creation
+                                    selectionRect = rectFromPoints(start: value.startLocation, end: value.location)
+                                    dragMode = .create
+                                } else if dragMode == .create {
+                                    selectionRect = rectFromPoints(start: value.startLocation, end: value.location)
                                 }
-                                currentPoint = value.location
                             }
-                            .onEnded { value in
-                                let rect = rectFromPoints(start: startPoint ?? .zero, end: value.location)
-                                onConfirm(rect)
+                            .onEnded { _ in
+                                dragMode = .none
                             }
                     )
                 
-                // Cutout / Selection indication
-                if let start = startPoint, let current = currentPoint {
-                    let rect = rectFromPoints(start: start, end: current)
-                    Rectangle()
-                        .stroke(Color.white, lineWidth: 2)
-                        .background(Color.clear) // Transparent center
-                        .frame(width: rect.width, height: rect.height)
-                        .position(x: rect.midX, y: rect.midY)
+                // Selection Rect
+                if let rect = selectionRect {
+                    ZStack {
+                        // The selection area (transparent)
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        if dragMode != .move {
+                                            dragMode = .move
+                                            startingRect = rect
+                                        }
+                                        if let start = startingRect {
+                                            selectionRect = CGRect(
+                                                x: start.origin.x + value.translation.width,
+                                                y: start.origin.y + value.translation.height,
+                                                width: start.width,
+                                                height: start.height
+                                            )
+                                        }
+                                    }
+                                    .onEnded { _ in 
+                                        dragMode = .none
+                                        startingRect = nil
+                                    }
+                            )
+                        
+                        // Border
+                        Rectangle()
+                            .stroke(Color.blue, lineWidth: 2)
+                        
+                        // Handles
+                        Group {
+                            Handle(edge: .topLeft, rect: rect, onResize: { delta in resize(edge: .topLeft, delta: delta) }, onEnd: { startingRect = nil })
+                            Handle(edge: .topRight, rect: rect, onResize: { delta in resize(edge: .topRight, delta: delta) }, onEnd: { startingRect = nil })
+                            Handle(edge: .bottomLeft, rect: rect, onResize: { delta in resize(edge: .bottomLeft, delta: delta) }, onEnd: { startingRect = nil })
+                            Handle(edge: .bottomRight, rect: rect, onResize: { delta in resize(edge: .bottomRight, delta: delta) }, onEnd: { startingRect = nil })
+                        }
+                    }
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
                     
                     // Dimensions Label
                     Text("\(Int(rect.width)) x \(Int(rect.height))")
@@ -43,43 +89,123 @@ struct SelectionOverlayView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.6).cornerRadius(4))
-                        .position(x: rect.midX, y: rect.maxY + 20)
+                        .background(Color.blue.cornerRadius(4))
+                        .position(x: rect.midX, y: rect.minY - 20)
                 }
                 
                 // Floating Toolbar
                 VStack {
-                    HStack(spacing: 16) {
-                        RatioBtn(label: "Free", ratio: nil, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = nil }
+                    HStack(spacing: 12) {
+                        RatioBtn(label: "selection.free".localized, ratio: nil, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = nil }
                         RatioBtn(label: "16:9", ratio: 16.0/9.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 16.0/9.0 }
                         RatioBtn(label: "4:3", ratio: 4.0/3.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 4.0/3.0 }
                         RatioBtn(label: "1:1", ratio: 1.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 1.0 }
-                        RatioBtn(label: "9:16", ratio: 9.0/16.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 9.0/16.0 }
-                        RatioBtn(label: "6:7", ratio: 6.0/7.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 6.0/7.0 }
-
+                        
                         Divider().frame(height: 20).background(Color.white.opacity(0.3))
                         
-                        Button(action: onCancel) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .bold))
+                        if selectionRect != nil {
+                            Button(action: { if let r = selectionRect { onConfirm(r) } }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "record.circle")
+                                    Text("selection.confirm".localized).fontWeight(.bold)
+                                }
                                 .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.red.cornerRadius(6))
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+
+                        Button(action: onCancel) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white.opacity(0.8))
                         }
                         .buttonStyle(PlainButtonStyle())
                         .help("Cancel")
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow).cornerRadius(30))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(VisualEffectBlur(material: .hudWindow, blendingMode: .behindWindow).cornerRadius(12))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 30)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
                     )
                     .padding(.top, 40)
                     
                     Spacer()
                 }
             }
-            .background(Color.clear) // ensure clicks pass through if needed, but here we want to catch them
+        }
+    }
+    
+    private func resize(edge: Edge, delta: CGSize) {
+        if startingRect == nil {
+            startingRect = selectionRect
+        }
+        
+        guard let start = startingRect else { return }
+        var newRect = start
+        
+        switch edge {
+        case .topLeft:
+            newRect.origin.x += delta.width
+            newRect.origin.y += delta.height
+            newRect.size.width -= delta.width
+            newRect.size.height -= delta.height
+        case .topRight:
+            newRect.origin.y += delta.height
+            newRect.size.width += delta.width
+            newRect.size.height -= delta.height
+        case .bottomLeft:
+            newRect.origin.x += delta.width
+            newRect.size.width -= delta.width
+            newRect.size.height += delta.height
+        case .bottomRight:
+            newRect.size.width += delta.width
+            newRect.size.height += delta.height
+        }
+        
+        // Constrain aspect ratio if set
+        if let ratio = SettingsManager.shared.selectionAspectRatio {
+            newRect.size.height = newRect.size.width / ratio
+        }
+        
+        selectionRect = newRect
+    }
+    
+    // Internal Handle Component
+    struct Handle: View {
+        let edge: Edge
+        let rect: CGRect
+        let onResize: (CGSize) -> Void
+        let onEnd: () -> Void
+        
+        var body: some View {
+            Circle()
+                .fill(Color.white)
+                .frame(width: 12, height: 12)
+                .overlay(Circle().stroke(Color.blue, lineWidth: 1))
+                .position(positionIn(rect: rect))
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            onResize(value.translation)
+                        }
+                        .onEnded { _ in
+                            onEnd()
+                        }
+                )
+        }
+        
+        private func positionIn(rect: CGRect) -> CGPoint {
+            switch edge {
+            case .topLeft: return .zero
+            case .topRight: return CGPoint(x: rect.width, y: 0)
+            case .bottomLeft: return CGPoint(x: 0, y: rect.height)
+            case .bottomRight: return CGPoint(x: rect.width, y: rect.height)
+            }
         }
     }
     
@@ -88,8 +214,6 @@ struct SelectionOverlayView: View {
         var height = abs(end.y - start.y)
         
         if let ratio = SettingsManager.shared.selectionAspectRatio {
-            // Constrain width and height based on ratio
-            // width / height = ratio => width = height * ratio
             if width > height * ratio {
                 width = height * ratio
             } else {

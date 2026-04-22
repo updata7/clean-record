@@ -19,6 +19,11 @@
 "control.beauty_filter" = "Beauty Filter";
 "control.start_recording" = "Start Recording";
 "control.cancel" = "Cancel";
+"camera.shape" = "Shape";
+"camera.size" = "Size";
+"camera.beauty" = "Beauty";
+"selection.confirm" = "Confirm";
+"selection.free" = "Free";
 
 /* Camera Shapes */
 "shape.circle" = "Circle";

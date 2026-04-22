@@ -4,7 +4,7 @@
 
 1. **Open Terminal** and navigate to the project directory:
    ```bash
-   cd /Users/chenk/Documents/code/AI/clean-record/CleanRecord
+   cd CleanRecord
    ```
 
 2. **Run the app** and watch the console output:

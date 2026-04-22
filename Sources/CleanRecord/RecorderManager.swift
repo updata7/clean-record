@@ -3,19 +3,33 @@ import ScreenCaptureKit
 import AVFoundation
 
 @available(macOS 12.3, *)
-class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, SCStreamDelegate {
+class RecorderManager: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate, SCStreamDelegate {
     static let shared = RecorderManager()
     
-    enum RecordingState {
+    enum RecordingState: Equatable {
         case idle
+        case countdown(Int)
         case recording
         case paused
+        
+        static func == (lhs: RecordingState, rhs: RecordingState) -> Bool {
+            switch (lhs, rhs) {
+            case (.idle, .idle): return true
+            case (.recording, .recording): return true
+            case (.paused, .paused): return true
+            case (.countdown(let a), .countdown(let b)): return a == b
+            default: return false
+            }
+        }
     }
     
     private var stream: SCStream?
     private var videoWriter: VideoWriter?
     private var audioSession: AVCaptureSession?
-    private var recordingState: RecordingState = .idle
+    @Published var recordingState: RecordingState = .idle
+    @Published var duration: TimeInterval = 0
+    
+    private var timer: Timer?
     
     var isRecording: Bool { recordingState != .idle }
     var isPaused: Bool { recordingState == .paused }
@@ -72,17 +86,23 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
                 var excludedWindows: [SCWindow] = []
                 
                 // borderWindow.windowNumber access should be on MainActor
-                let borderWindowID = await MainActor.run { () -> CGWindowID? in
-                    if let borderWindow = RecordingBorderManager.shared.window {
-                        return CGWindowID(borderWindow.windowNumber)
-                    }
-                    return nil
+                let (borderWindowID, controlBarWindowID) = await MainActor.run { () -> (CGWindowID?, CGWindowID?) in
+                    let bID = RecordingBorderManager.shared.window.map { CGWindowID($0.windowNumber) }
+                    let cID = ControlBarWindowManager.shared.window.map { CGWindowID($0.windowNumber) }
+                    return (bID, cID)
                 }
                 
-                if let borderWindowID = borderWindowID {
-                    if let scWindow = scContent.windows.first(where: { $0.windowID == borderWindowID }) {
+                if let bID = borderWindowID {
+                    if let scWindow = scContent.windows.first(where: { $0.windowID == bID }) {
                         excludedWindows.append(scWindow)
-                        print("RecorderManager: Excluding border window \(borderWindowID)")
+                        print("RecorderManager: Excluding border window \(bID)")
+                    }
+                }
+                
+                if let cID = controlBarWindowID {
+                    if let scWindow = scContent.windows.first(where: { $0.windowID == cID }) {
+                        excludedWindows.append(scWindow)
+                        print("RecorderManager: Excluding control bar window \(cID)")
                     }
                 }
                 
@@ -110,6 +130,13 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
                 // CRITICAL: Use non-main queue to avoid deadlocks
                 try stream.addStreamOutput(writer, type: SCStreamOutputType.screen, sampleHandlerQueue: videoSampleQueue)
                 
+                // Countdown logic
+                for i in (1...3).reversed() {
+                    self.recordingState = .countdown(i)
+                    print("RecorderManager: Countdown... \(i)")
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                }
+                
                 print("RecorderManager: Starting capture...")
                 try await stream.startCapture()
                 
@@ -119,6 +146,8 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
                 }
                 
                 self.recordingState = .recording
+                self.duration = 0
+                self.startTimer()
                 print("Recording started at \(fileURL.path)")
                 completion(.success(()))
                 
@@ -177,6 +206,7 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
         guard recordingState == .paused else { return }
         videoWriter?.resume()
         recordingState = .recording
+        startTimer()
         print("RecorderManager: Recording resumed.")
     }
     
@@ -201,10 +231,19 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
             let url = await writer.finish()
             print("RecorderManager: VideoWriter finished. URL: \(url.path)")
             
+            self.stopTimer()
             self.stream = nil
             self.videoWriter = nil
             self.audioSession = nil
             self.recordingState = .idle
+            self.duration = 0
+            
+            // Show notification
+            let notification = NSUserNotification()
+            notification.title = "Recording Finished"
+            notification.informativeText = "Saved to \(url.lastPathComponent)"
+            notification.soundName = NSUserNotificationDefaultSoundName
+            NSUserNotificationCenter.default.deliver(notification)
             
             return url
         } catch {
@@ -216,5 +255,36 @@ class RecorderManager: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, S
     // MARK: - SCStreamDelegate
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         print("RecorderManager: SCStream stopped with error: \(error.localizedDescription)")
+    }
+    
+    // MARK: - Timer
+    private func startTimer() {
+        print("RecorderManager: startTimer() called.")
+        stopTimer()
+        
+        // Use a timer that isn't automatically scheduled, then add it to Main RunLoop
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // Check state
+            let currentState = self.recordingState
+            if case .recording = currentState {
+                DispatchQueue.main.async {
+                    self.duration += 1
+                    if Int(self.duration) % 5 == 0 {
+                        print("RecorderManager: Duration updated to \(self.duration)")
+                    }
+                }
+            }
+        }
+        
+        self.timer = t
+        RunLoop.main.add(t, forMode: .common)
+        print("RecorderManager: Timer added to Main RunLoop.")
+    }
+    
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 }

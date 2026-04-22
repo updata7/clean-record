@@ -55,7 +55,14 @@ class VideoWriter: NSObject, SCStreamOutput {
             AVVideoHeightKey: adjHeight,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
-                AVVideoExpectedSourceFrameRateKey: 60
+                AVVideoExpectedSourceFrameRateKey: 60,
+                AVVideoMaxKeyFrameIntervalKey: 30,
+                AVVideoProfileLevelKey: codecType == .h264 ? AVVideoProfileLevelH264HighAutoLevel : "HEVC_Main_AutoLevel"
+            ],
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
             ],
             AVVideoScalingModeKey: AVVideoScalingModeResizeAspect
         ]
@@ -183,34 +190,20 @@ class VideoWriter: NSObject, SCStreamOutput {
     }
 
     private func writeVideoFrame(_ sampleBuffer: CMSampleBuffer, at adjustedTime: CMTime) {
-        guard let videoInput = videoInput, videoInput.isReadyForMoreMediaData else { return }
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+              let adaptor = pixelBufferAdaptor,
+              let videoInput = videoInput,
+              videoInput.isReadyForMoreMediaData else { return }
         
-        var timing = CMSampleTimingInfo(
-            duration: CMSampleBufferGetDuration(sampleBuffer),
-            presentationTimeStamp: adjustedTime,
-            decodeTimeStamp: .invalid
-        )
-        
-        var adjustedBuffer: CMSampleBuffer?
-        let status = CMSampleBufferCreateCopyWithNewTiming(
-            allocator: kCFAllocatorDefault,
-            sampleBuffer: sampleBuffer,
-            sampleTimingEntryCount: 1,
-            sampleTimingArray: &timing,
-            sampleBufferOut: &adjustedBuffer
-        )
-        
-        if status == noErr, let buffer = adjustedBuffer {
-            if !videoInput.append(buffer) {
-                print("VideoWriter Error: Failed to append video buffer. Status: \(assetWriter?.status.rawValue ?? -1), Error: \(String(describing: assetWriter?.error))")
-            } else {
-                frameCounter += 1
-                if frameCounter == 1 {
-                    processPendingAudio()
-                }
-                if frameCounter <= 10 || frameCounter % 100 == 0 {
-                    print("VideoWriter: Stream activity - recorded \(frameCounter) frames (adjusted PTS: \(adjustedTime.seconds)).")
-                }
+        if !adaptor.append(pixelBuffer, withPresentationTime: adjustedTime) {
+            print("VideoWriter Error: Failed to append pixel buffer via adaptor. Status: \(assetWriter?.status.rawValue ?? -1), Error: \(String(describing: assetWriter?.error))")
+        } else {
+            frameCounter += 1
+            if frameCounter == 1 {
+                processPendingAudio()
+            }
+            if frameCounter <= 10 || frameCounter % 100 == 0 {
+                print("VideoWriter: Recorded \(frameCounter) frames (adjusted PTS: \(adjustedTime.seconds)).")
             }
         }
     }

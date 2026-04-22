@@ -3,41 +3,29 @@ import AVFoundation
 
 struct CameraOverlayView: View {
     @ObservedObject var settings = SettingsManager.shared
-    @State private var currentMagnification: CGFloat = 1.0
     
     var body: some View {
         ZStack {
-            // Camera Shape
+            // Camera Content
             Group {
                 if settings.cameraShape == "circle" {
                     CameraPreview()
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 2))
                 } else if settings.cameraShape == "square" {
                     CameraPreview()
                         .clipShape(RoundedRectangle(cornerRadius: 20))
-                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 2))
+                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.8), lineWidth: 2))
                 } else {
                     CameraPreview()
                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white, lineWidth: 2))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.8), lineWidth: 2))
                 }
             }
-            .shadow(radius: 5)
+            .shadow(radius: 10)
         }
-        .frame(width: 200 * CGFloat(settings.cameraScale) * currentMagnification, 
-               height: (settings.cameraShape == "rectangle" ? 150 : 200) * CGFloat(settings.cameraScale) * currentMagnification)
-        .contentShape(Rectangle()) 
-        .simultaneousGesture(
-            MagnificationGesture()
-                .onChanged { value in
-                    self.currentMagnification = value
-                }
-                .onEnded { value in
-                    settings.cameraScale = min(max(settings.cameraScale * Double(value), 0.2), 5.0)
-                    self.currentMagnification = 1.0
-                }
-        )
+        .frame(width: 200 * CGFloat(settings.cameraScale), 
+               height: (settings.cameraShape == "rectangle" ? 150 : 200) * CGFloat(settings.cameraScale))
         .onAppear {
             CameraSessionManager.shared.start()
         }
