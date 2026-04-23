@@ -267,7 +267,9 @@ class StatusBarController: NSObject {
                                         RecordingBorderManager.shared.hideBorder()
                                         CameraOverlayManager.shared.hideCamera()
                                         CameraSessionManager.shared.stop()
+                                        WhiteboardWindowManager.shared.hideWhiteboard()
                                         stManager.cameraEnabled = false
+                                        stManager.whiteboardEnabled = false
                                     }
                                 }
                             )
@@ -348,7 +350,9 @@ class StatusBarController: NSObject {
                                     RecordingBorderManager.shared.hideBorder()
                                     CameraOverlayManager.shared.hideCamera()
                                     CameraSessionManager.shared.stop()
+                                    WhiteboardWindowManager.shared.hideWhiteboard()
                                     stManager.cameraEnabled = false
+                                    stManager.whiteboardEnabled = false
                                 }
                             }
                         )

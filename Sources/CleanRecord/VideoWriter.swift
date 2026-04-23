@@ -55,9 +55,10 @@ class VideoWriter: NSObject, SCStreamOutput {
             AVVideoHeightKey: adjHeight,
             AVVideoCompressionPropertiesKey: [
                 AVVideoAverageBitRateKey: bitrate,
+                AVVideoProfileLevelKey: codecType == .h264 ? AVVideoProfileLevelH264HighAutoLevel : "HEVC_Main_AutoLevel",
                 AVVideoExpectedSourceFrameRateKey: 60,
                 AVVideoMaxKeyFrameIntervalKey: 30,
-                AVVideoProfileLevelKey: codecType == .h264 ? AVVideoProfileLevelH264HighAutoLevel : "HEVC_Main_AutoLevel"
+                AVVideoAllowFrameReorderingKey: true
             ],
             AVVideoColorPropertiesKey: [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,

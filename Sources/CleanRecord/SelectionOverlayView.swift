@@ -36,6 +36,9 @@ struct SelectionOverlayView: View {
                             }
                             .onEnded { _ in
                                 dragMode = .none
+                                if let r = selectionRect {
+                                    onConfirm(r)
+                                }
                             }
                     )
                 
@@ -98,23 +101,14 @@ struct SelectionOverlayView: View {
                     HStack(spacing: 12) {
                         RatioBtn(label: "selection.free".localized, ratio: nil, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = nil }
                         RatioBtn(label: "16:9", ratio: 16.0/9.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 16.0/9.0 }
+                        RatioBtn(label: "9:16", ratio: 9.0/16.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 9.0/16.0 }
                         RatioBtn(label: "4:3", ratio: 4.0/3.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 4.0/3.0 }
                         RatioBtn(label: "1:1", ratio: 1.0, current: settings.selectionAspectRatio) { settings.selectionAspectRatio = 1.0 }
                         
                         Divider().frame(height: 20).background(Color.white.opacity(0.3))
                         
                         if selectionRect != nil {
-                            Button(action: { if let r = selectionRect { onConfirm(r) } }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "record.circle")
-                                    Text("selection.confirm".localized).fontWeight(.bold)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
-                                .background(Color.red.cornerRadius(6))
-                            }
-                            .buttonStyle(PlainButtonStyle())
+                            // Automatically confirm on drag end, or show a small action button
                         }
 
                         Button(action: onCancel) {

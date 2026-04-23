@@ -18,33 +18,18 @@ class SettingsManager: ObservableObject {
     private let kSelectionAspectRatio = "selectionAspectRatio"
     
     // Published properties for UI binding
-    @Published var micEnabled: Bool {
+    @Published var micEnabled: Bool = true {
         didSet { defaults.set(micEnabled, forKey: kMicEnabled) }
     }
-    
-    @Published var systemAudioEnabled: Bool {
-        didSet { defaults.set(systemAudioEnabled, forKey: kSystemAudioEnabled) }
-    }
-    
-    // Camera enabled is session-only
+    @Published var systemAudioEnabled: Bool = false
     @Published var cameraEnabled: Bool = false
+    @Published var whiteboardEnabled: Bool = false
     
-    // Camera shape and scale are persisted
-    @Published var cameraShape: String {
-        didSet { defaults.set(cameraShape, forKey: kCameraShape) }
-    }
-    
-    @Published var cameraScale: Double {
-        didSet { defaults.set(cameraScale, forKey: kCameraScale) }
-    }
-    
-    @Published var beautyEnabled: Bool {
-        didSet { defaults.set(beautyEnabled, forKey: kBeautyEnabled) }
-    }
-    
-    @Published var beautyLevel: Double {
-        didSet { defaults.set(beautyLevel, forKey: kBeautyLevel) }
-    }
+    // Camera shape and scale are session-only
+    @Published var cameraShape: String = "circle"
+    @Published var cameraScale: Double = 1.0
+    @Published var beautyEnabled: Bool = false
+    @Published var beautyLevel: Double = 0.0
     
     @Published var selectionAspectRatio: Double? {
         didSet { defaults.set(selectionAspectRatio ?? 0, forKey: kSelectionAspectRatio) }
@@ -54,16 +39,13 @@ class SettingsManager: ObservableObject {
     @Published var lastRecordingRect: NSRect? = nil
     
     init() {
-        self.micEnabled = defaults.object(forKey: kMicEnabled) as? Bool ?? false
-        self.systemAudioEnabled = defaults.object(forKey: kSystemAudioEnabled) as? Bool ?? false
-        self.cameraEnabled = false
-        self.cameraShape = defaults.string(forKey: kCameraShape) ?? "circle"
-        
-        let savedScale = defaults.double(forKey: kCameraScale)
-        self.cameraScale = savedScale == 0 ? 1.0 : savedScale
-        
-        self.beautyEnabled = defaults.bool(forKey: kBeautyEnabled)
-        self.beautyLevel = defaults.double(forKey: kBeautyLevel)
+        // Load persistent settings
+        if defaults.object(forKey: kMicEnabled) != nil {
+            self.micEnabled = defaults.bool(forKey: kMicEnabled)
+        } else {
+            // Default to true for new installs
+            self.micEnabled = true
+        }
         
         let savedRatio = defaults.double(forKey: kSelectionAspectRatio)
         self.selectionAspectRatio = savedRatio == 0 ? nil : savedRatio
@@ -149,7 +131,9 @@ class SettingsManager: ObservableObject {
     }
     
     var recommendedBitrate: Int {
-        return isAppleSilicon ? 20_000_000 : 12_000_000
+        // Boost bitrates for professional quality
+        // Apple Silicon (M1/M2/M3) can handle high-speed HEVC encoding easily
+        return isAppleSilicon ? 50_000_000 : 30_000_000
     }
     
     var recommendedPixelFormat: OSType {

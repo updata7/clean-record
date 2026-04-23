@@ -21,10 +21,6 @@ class RecordingBorderManager {
     }
     
     private func createWindow(rect: CGRect) {
-        // Create a clear window that ignores mouse events but draws a border
-        // We need to match screen coordinates.
-        // For MVP we assume rect is in screen coordinates (bottom-left origin for NSWindow).
-        
         let overlayWindow = NSWindow(
             contentRect: rect,
             styleMask: [.borderless],
@@ -35,26 +31,62 @@ class RecordingBorderManager {
         overlayWindow.isReleasedWhenClosed = false
         overlayWindow.backgroundColor = .clear
         overlayWindow.level = .floating
-        overlayWindow.ignoresMouseEvents = true // Pass through clicks
+        overlayWindow.ignoresMouseEvents = false // Allow dragging the border
         
-        // Custom view to draw the border
-        let borderView = BorderView(frame: NSRect(x: 0, y: 0, width: rect.width, height: rect.height))
-        overlayWindow.contentView = borderView
+        let hostingView = NSHostingView(rootView: MovableBorderView(rect: rect))
+        overlayWindow.contentView = hostingView
         
         self.window = overlayWindow
     }
 }
 
-class BorderView: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.clear.set()
-        dirtyRect.fill()
+struct MovableBorderView: View {
+    @ObservedObject var settings = SettingsManager.shared
+    @State private var dragStartingOrigin: CGPoint?
+    let rect: CGRect
+    
+    var body: some View {
+        Rectangle()
+            .stroke(Color.red, lineWidth: 4)
+            .contentShape(Rectangle().stroke(lineWidth: 10)) // Make the edge draggable
+            .background(Color.black.opacity(0.001)) // Subtle background for middle-dragging
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        moveWindow(translation: value.translation)
+                    }
+                    .onEnded { _ in
+                        dragStartingOrigin = nil
+                    }
+            )
+    }
+    
+    private func moveWindow(translation: CGSize) {
+        guard let window = RecordingBorderManager.shared.window else { return }
         
-        let path = NSBezierPath(rect: bounds)
-        path.lineWidth = 4
-        NSColor.red.setStroke()
-        path.stroke()
+        if dragStartingOrigin == nil {
+            dragStartingOrigin = window.frame.origin
+        }
         
-        // Dashed line or simple red line? CleanShot uses simple line or dashed. Red is standard.
+        if let start = dragStartingOrigin {
+            var newOrigin = start
+            newOrigin.x += translation.width
+            newOrigin.y -= translation.height
+            
+            let newFrame = NSRect(origin: newOrigin, size: window.frame.size)
+            window.setFrame(newFrame, display: true)
+            
+            // Sync with settings and recorder
+            settings.lastRecordingRect = newFrame
+            if RecorderManager.shared.isRecording {
+                RecorderManager.shared.updateCaptureRect(newFrame)
+            }
+            
+            // Also move control bar and whiteboard if needed
+            ControlBarWindowManager.shared.updatePosition(for: newFrame)
+            if settings.whiteboardEnabled {
+                WhiteboardWindowManager.shared.showWhiteboard() // This will update position
+            }
+        }
     }
 }

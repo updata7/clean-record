@@ -26,12 +26,15 @@ class RecorderManager: NSObject, ObservableObject, AVCaptureAudioDataOutputSampl
     private var stream: SCStream?
     private var videoWriter: VideoWriter?
     private var audioSession: AVCaptureSession?
+    private var lastDisplay: SCDisplay?
     @Published var recordingState: RecordingState = .idle
     @Published var duration: TimeInterval = 0
     
     private var timer: Timer?
     
-    var isRecording: Bool { recordingState != .idle }
+    var isRecording: Bool { 
+        recordingState == .recording || recordingState == .paused 
+    }
     var isPaused: Bool { recordingState == .paused }
     
     // Dedicated queue for video samples to prevent blocking Main thread
@@ -56,25 +59,43 @@ class RecorderManager: NSObject, ObservableObject, AVCaptureAudioDataOutputSampl
                     completion(.failure(NSError(domain: "RecorderManager", code: -1, userInfo: [NSLocalizedDescriptionKey: "No displays found"])))
                     return
                 }
+                // Find the matching NSScreen for logical coordinate conversion
+                let screens = NSScreen.screens
+                let matchingScreen = screens.first(where: { screen in
+                    let description = screen.deviceDescription
+                    let screenID = description[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+                    return screenID == display.displayID
+                }) ?? NSScreen.main ?? screens[0]
                 
-                print("RecorderManager: Selected display: \(display.displayID), size: \(display.width)x\(display.height)")
+                let screenHeight = matchingScreen.frame.height
+                let scale = CGFloat(display.width) / matchingScreen.frame.width
+                
+                print("RecorderManager: Selected display: \(display.displayID), pixelSize: \(display.width)x\(display.height), pointSize: \(matchingScreen.frame.size), scale: \(scale)")
+                self.lastDisplay = display
                 
                 let streamConfig = SCStreamConfiguration()
-                streamConfig.width = Int(rect?.width ?? CGFloat(display.width)) * 2
-                streamConfig.height = Int(rect?.height ?? CGFloat(display.height)) * 2
                 
                 if let rect = rect {
-                    let displayHeight = CGFloat(display.height)
-                    // Ensure integer alignment for sourceRect to prevent SCStream silent failure
+                    // sourceRect must be in points (logical coordinates) with Top-Left origin
                     let scRect = CGRect(
                         x: floor(rect.minX),
-                        y: floor(displayHeight - rect.minY - rect.height),
+                        y: floor(screenHeight - rect.minY - rect.height),
                         width: floor(rect.width),
                         height: floor(rect.height)
                     ).integral
                     
                     streamConfig.sourceRect = scRect
-                    print("RecorderManager: Using SCStream sourceRect: \(scRect) (from Cocoa rect: \(rect), displayHeight: \(displayHeight))")
+                    
+                    // Output width/height should be physical pixels to maintain quality
+                    streamConfig.width = Int(rect.width * scale)
+                    streamConfig.height = Int(rect.height * scale)
+                    
+                    print("RecorderManager: Using SCStream sourceRect (Points, Top-Left): \(scRect) (from Cocoa rect: \(rect), screenHeight: \(screenHeight))")
+                    print("RecorderManager: Output size (Pixels): \(streamConfig.width)x\(streamConfig.height)")
+                } else {
+                    // Full screen
+                    streamConfig.width = display.width
+                    streamConfig.height = display.height
                 }
                 
                 streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 60)
@@ -238,6 +259,11 @@ class RecorderManager: NSObject, ObservableObject, AVCaptureAudioDataOutputSampl
             self.recordingState = .idle
             self.duration = 0
             
+            // Hide whiteboard as it is part of the system
+            await MainActor.run {
+                WhiteboardWindowManager.shared.hideWhiteboard()
+            }
+            
             // Show notification
             let notification = NSUserNotification()
             notification.title = "Recording Finished"
@@ -249,6 +275,58 @@ class RecorderManager: NSObject, ObservableObject, AVCaptureAudioDataOutputSampl
         } catch {
             print("RecorderManager: Error stopping capture: \(error)")
             return nil
+        }
+    }
+    
+    func updateCaptureRect(_ rect: CGRect) {
+        guard let stream = stream, let display = lastDisplay else { return }
+        
+        Task {
+            // Re-find the matching screen for consistent coordinate math
+            let screens = await MainActor.run { NSScreen.screens }
+            let foundScreen = screens.first(where: { screen in
+                let description = screen.deviceDescription
+                let screenID = description[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+                return screenID == display.displayID
+            })
+            
+            let matchingScreen: NSScreen
+            if let found = foundScreen {
+                matchingScreen = found
+            } else if let main = await MainActor.run(body: { NSScreen.main }) {
+                matchingScreen = main
+            } else {
+                matchingScreen = screens[0]
+            }
+            
+            let screenHeight = matchingScreen.frame.height
+            let scale = CGFloat(display.width) / matchingScreen.frame.width
+            
+            let streamConfig = SCStreamConfiguration()
+            
+            // sourceRect must be in points (logical coordinates) with Top-Left origin
+            let scRect = CGRect(
+                x: floor(rect.minX),
+                y: floor(screenHeight - rect.minY - rect.height),
+                width: floor(rect.width),
+                height: floor(rect.height)
+            ).integral
+            
+            streamConfig.sourceRect = scRect
+            streamConfig.width = Int(rect.width * scale)
+            streamConfig.height = Int(rect.height * scale)
+            
+            streamConfig.minimumFrameInterval = CMTime(value: 1, timescale: 60)
+            streamConfig.queueDepth = 16
+            streamConfig.pixelFormat = SettingsManager.shared.recommendedPixelFormat
+            streamConfig.showsCursor = true
+            
+            do {
+                try await stream.updateConfiguration(streamConfig)
+                print("RecorderManager: Updated capture rect to \(scRect)")
+            } catch {
+                print("RecorderManager: Failed to update configuration: \(error)")
+            }
         }
     }
     

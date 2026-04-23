@@ -26,6 +26,7 @@ struct CameraOverlayView: View {
         }
         .frame(width: 200 * CGFloat(settings.cameraScale), 
                height: (settings.cameraShape == "rectangle" ? 150 : 200) * CGFloat(settings.cameraScale))
+        .contentShape(Rectangle()) // Still useful for clicks
         .onAppear {
             CameraSessionManager.shared.start()
         }
@@ -61,4 +62,9 @@ class FilteredCameraView: NSView {
     }
     
     required init?(coder: NSCoder) { fatalError() }
+    
+    override func mouseDown(with event: NSEvent) {
+        // Native macOS window dragging - 100% smooth
+        self.window?.performDrag(with: event)
+    }
 }

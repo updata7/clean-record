@@ -39,6 +39,9 @@ struct ControlBarView: View {
                 // Camera
                 CompactCameraToggle(isOn: $settings.cameraEnabled)
                 
+                // Whiteboard
+                CompactWhiteboardToggle(isOn: $settings.whiteboardEnabled)
+                
                 if settings.cameraEnabled {
                     CompactSeparator()
                     cameraControls
@@ -272,6 +275,25 @@ struct CompactCameraToggle: View {
                 CameraOverlayManager.shared.showCamera()
             } else {
                 CameraOverlayManager.shared.hideCamera()
+            }
+        }
+    }
+}
+
+struct CompactWhiteboardToggle: View {
+    @Binding var isOn: Bool
+    var body: some View {
+        Button(action: { isOn.toggle() }) {
+            Image(systemName: isOn ? "pencil.tip.crop.circle.badge.minus" : "pencil.tip.crop.circle")
+                .font(.system(size: 13))
+                .foregroundColor(isOn ? .blue : .black.opacity(0.6))
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onChange(of: isOn) { enabled in
+            if enabled {
+                WhiteboardWindowManager.shared.showWhiteboard()
+            } else {
+                WhiteboardWindowManager.shared.hideWhiteboard()
             }
         }
     }

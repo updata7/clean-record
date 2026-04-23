@@ -51,8 +51,8 @@ class ControlBarWindowManager {
             window?.contentView = hostingView
         }
         
-        // Dimensions for the window (larger than capsule to avoid shadow clipping)
-        let windowWidth: CGFloat = 400
+        // Dimensions for the window (sufficiently wide for all controls + timer)
+        let windowWidth: CGFloat = 500
         let windowHeight: CGFloat = 100
         let x = point.x + (width - windowWidth) / 2
         
@@ -79,9 +79,27 @@ class ControlBarWindowManager {
         window = nil
     }
     
+    func updatePosition(for rect: NSRect) {
+        guard let window = window else { return }
+        
+        let windowWidth = window.frame.width
+        let x = rect.midX - windowWidth / 2
+        
+        // Position below the recording area
+        var y = rect.minY - 60
+        
+        // Ensure it doesn't go off screen
+        if y < 20 {
+            // Position above the area if no room below
+            y = rect.maxY + 20
+        }
+        
+        window.setFrameOrigin(CGPoint(x: x, y: y))
+    }
+    
     private func createWindow() {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 400, height: 100),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 100),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false

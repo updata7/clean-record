@@ -43,7 +43,7 @@ class CameraOverlayManager {
             defer: false
         )
         
-        panel.level = .floating
+        panel.level = .statusBar // Ensure it's above the whiteboard
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.ignoresMouseEvents = false
